@@ -7,6 +7,9 @@ def softmax(x):
     xt = exp(x - max(x))
     return xt / sum(xt)
 
+def tanh(x):
+    return 2 * sigmoid(2 * x) - 1.
+
 def make_onehot(i, n):
     y = zeros(n)
     y[i] = 1
