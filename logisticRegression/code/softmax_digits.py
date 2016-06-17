@@ -2,56 +2,70 @@
 # training is done in ipython notebook with the same name because of 
 # better visual environment
 
+
+# Set memory limit because if there is a bug it can eat up a memory
 import resource
 
 rsrc = resource.RLIMIT_DATA
 soft, hard = resource.getrlimit(rsrc)
 print 'Soft limit starts as  :', soft
 
-resource.setrlimit(rsrc, (2024000000, hard)) #limit to one kilobyte
+resource.setrlimit(rsrc, (2024000000, hard)) #limit to 2gb
 
 soft, hard = resource.getrlimit(rsrc)
 print 'Soft limit changed to :', soft
 
 
-import os
-import seaborn as sns
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from nn.base import NNBase
 from nn.math import softmax, make_onehot
 from misc import random_weight_matrix
-from numpy import *
 from softmax_example import SoftmaxRegression
 
-sns.set(color_codes=True)
-plt.rcParams['savefig.dpi'] = 100
-
-
-def get_data(num_train, num_dev, num_test):
+def get_data(num_train, num_dev, num_test, dataset='truncmnist'):
     """
-    read, preprocess and split the data into different sets. data has 
-    following features pixel0 .. pixel783 (28 x 28 grayscale image)
-    each has a value 0..255 inclusive, total number of images in train set are 
-    4200.
-        
-        - num_train number of rows used for training
+    read, preprocess and split the data into different sets. 
+    dataset indicates which set to load:
+        - truncmnist : dataset provided by Taras, 20x20 images, count 5000.
+        - kaggle : 28x28 greyscale image, count 42000
+          https://www.kaggle.com/c/digit-recognizer/data 
+    Params: 
+        - num_train num of data used for training
         - num_dev number of rows for validation
         - num_test number of rows for test split
     """
-    fulltrain = pd.read_csv("../input/train.csv")
-    fulltest = pd.read_csv("../input/test.csv") # we'd like a prediction for this
+    fulltestX = None # fulltestX is the data for which we don't have lables
 
-    # It seems that digits aren't uniformly distributed in the data
-    # let's shuffle the whole training set to get a better splits
-    #import ipdb; ipdb.set_trace() 
-    ind = range(fulltrain.shape[0])
-    np.random.shuffle(ind)
-    fulltrainX = fulltrain.ix[ind].drop('label', axis=1).as_matrix()
-    fulltrainy = fulltrain.ix[ind]['label'].as_matrix()
-    fulltestX = fulltest.as_matrix()
+    if dataset == 'kaggle':
+        fulltrain = pd.read_csv('../input/train.csv')
+        # we'd like a prediction for this unknown data
+        fulltest = pd.read_csv('../input/test.csv') 
+        ind = range(fulltrain.shape[0])
+        np.random.shuffle(ind)
+        fulltrainX = fulltrain.ix[ind].drop('label', axis=1).as_matrix()
+        fulltrainy = fulltrain.ix[ind]['label'].as_matrix()
+        fulltestX = fulltest.as_matrix()
 
+    elif dataset == 'truncmnist':
+        fulltrain = pd.read_csv('../input/trunc_mnist/trunc_mnist20x20_inputs.csv',
+                header=None)
+    
+        fulltrainlabel = pd.read_csv('../input/trunc_mnist/trunc_mnist20x20_targets.csv',
+                header=None)
+
+        fulltrainX = fulltrain.as_matrix()
+        # labels are 1 to 10 in data
+        fulltrainy = fulltrainlabel.as_matrix().flatten() - 1 
+
+        # It seems that digits aren't uniformly distributed in the data
+        # Shuffle the whole training set to get a better splits
+        #import ipdb; ipdb.set_trace() 
+        ind = range(fulltrain.shape[0])
+        np.random.shuffle(ind)
+        fulltrainX = fulltrainX[ind, :]
+        fulltrainy = fulltrainy[ind]
+    
     # normalize the data, substract mean and divide by SD
     mean = np.mean(fulltrainX, axis=0)
     sd = np.std(fulltrainX, axis=0)
@@ -59,9 +73,10 @@ def get_data(num_train, num_dev, num_test):
     
     fulltrainX = fulltrainX - mean
     fulltrainX[:, nonzero] /= sd[nonzero]
-
-    fulltestX = fulltestX - mean
-    fulltestX[:, nonzero] /= sd[nonzero]
+    
+    if fulltestX is not None:
+        fulltestX = fulltestX - mean
+        fulltestX[:, nonzero] /= sd[nonzero]
 
     # split the data 
     X_train = fulltrainX[:num_train, :]
@@ -80,7 +95,7 @@ def get_data(num_train, num_dev, num_test):
     return (X_train, y_train, X_dev, y_dev, X_test, y_test,fulltestX)
 
 
-
+#TODO cleanup below
 #(X_train, y_train, X_dev, y_dev, X_test, y_test, X_fulltest) = get_data(num_train=40000, 
 #        num_dev=1000, num_test=1000)
 #sr = SoftmaxRegression(wv=zeros((10,784)), dims=(784,5))
