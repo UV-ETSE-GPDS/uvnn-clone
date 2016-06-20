@@ -298,7 +298,10 @@ class NNBase(object):
         self._reset_grad_acc()
         self._acc_grads(x, y)
         self.sgrads.coalesce() # combine sparse updates
-
+        
+        # compute_loss_full expects x and y as arrays
+        xx = expand_dims(x, axis=0)
+        yy = expand_dims(y, axis=0)
         ##
         # Loop over dense parameters
         for name in self.params.names():
@@ -309,9 +312,9 @@ class NNBase(object):
             for ij, v in ndenumerate(theta):
                 tij = theta[ij]
                 theta[ij] = tij + eps
-                Jplus  = self.compute_loss(x, y)
+                Jplus  = self.compute_loss_full(xx, yy)
                 theta[ij] = tij - eps
-                Jminus = self.compute_loss(x, y)
+                Jminus = self.compute_loss_full(xx, yy)
                 theta[ij] = tij # reset
                 grad_approx[ij] = (Jplus - Jminus)/(2*eps)
             # Compute Frobenius norm
@@ -346,9 +349,9 @@ class NNBase(object):
                 for k, ij in enumerate(idxtuples):
                     tij = theta[ij]
                     theta[ij] = tij + eps
-                    Jplus  = self.compute_loss(x, y)
+                    Jplus  = self.compute_loss_full(xx, yy)
                     theta[ij] = tij - eps
-                    Jminus = self.compute_loss(x, y)
+                    Jminus = self.compute_loss_full(xx, yy)
                     theta[ij] = tij # reset
                     grad_approx[k] = (Jplus - Jminus)/(2*eps)
                 # Thankfully, numpy is *very* consistent about index order

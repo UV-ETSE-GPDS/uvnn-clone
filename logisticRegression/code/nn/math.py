@@ -15,6 +15,11 @@ def make_onehot(i, n):
     y[i] = 1
     return y
 
+def tanhd(x):
+    # deriative of tan function
+    #return 4 * sigmoid(2.0 * x) * (1.0 - sigmoid(2.0 * x))
+    return 1. - tanh(x) ** 2
+
 
 class MultinomialSampler(object):
     """

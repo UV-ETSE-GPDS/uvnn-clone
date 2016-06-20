@@ -1,5 +1,5 @@
 from nn.base import NNBase
-from nn.math import softmax, make_onehot, tanh
+from nn.math import softmax, make_onehot, tanh, tanhd
 from misc import random_weight_matrix
 import numpy as np
 
@@ -48,7 +48,6 @@ class MLP(NNBase):
         """
         ##
         # Forward propagation
-        #import ipdb; ipdb.set_trace()
         z1 = self.params.W.dot(x) + self.params.b1
         h = tanh(z1)
         z2 = np.dot(self.params.U, h) + self.params.b2
@@ -58,9 +57,7 @@ class MLP(NNBase):
         d2 = y_hat - y
         self.grads.b2 += d2
         self.grads.U += np.outer(d2, h) + self.lreg * self.params.U
-        # to transpose one dimensional array we use a[None].T thanks 
-        # to SO
-        d1 = np.dot(self.params.U.T, d2) * tanh(z1) # 100 x 1
+        d1 = np.dot(self.params.U.T, d2) * tanhd(z1) 
         
         self.grads.W += np.outer(d1, x) + self.lreg * self.params.W
         self.grads.b1 += d1
@@ -71,7 +68,8 @@ class MLP(NNBase):
         loss = 0
         for idx in xrange(X.shape[0]):
             loss += self.compute_loss(X[idx], y[idx])
-        Jreg = (self.lreg / 2.0) * np.sum(self.params.W**2.0)
+        Jreg = (self.lreg / 2.0) * (np.sum(self.params.W**2.0) + 
+                np.sum(self.params.U**2.0))
         return loss + Jreg
 
 
