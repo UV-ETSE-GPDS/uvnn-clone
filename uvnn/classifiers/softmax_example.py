@@ -9,7 +9,7 @@ class SoftmaxRegression(NNBase):
     This implements softmax regression, trained by SGD.
     """
 
-    def __init__(self, wv, dims=[100, 5],
+    def __init__(self, dims=[100, 5],
                  reg=0.1, alpha=0.001,
                  rseed=10):
         """
@@ -33,15 +33,13 @@ class SoftmaxRegression(NNBase):
         # These parameters have sparse gradients,
         # which is *much* more efficient if only a row
         # at a time gets updated (e.g. word representations)
-        param_dims_sparse = dict(L=wv.shape)
-        NNBase.__init__(self, param_dims, param_dims_sparse)
+        NNBase.__init__(self, param_dims)
 
         ##
         # Now we can access the parameters using
         # self.params.<name> for normal parameters
         # self.sparams.<name> for params with sparse gradients
         # and get access to normal NumPy arrays
-        self.sparams.L = wv.copy() # store own representations
         self.params.W = random_weight_matrix(*self.params.W.shape)
         # self.params.b1 = zeros((self.nclass,1)) # done automatically!
 

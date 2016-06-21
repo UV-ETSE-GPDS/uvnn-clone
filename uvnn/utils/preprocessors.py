@@ -46,7 +46,7 @@ class BasicPreprocessor(object):
             ind = range(self.num_samples)
             np.random.shuffle(ind)
             self.X = self.X[ind, :]
-            self.X = self.X[ind]
+            self.y = self.y[ind]
         
         X_train = self.X[:num_train, :]
         y_train = self.y[:num_train]
