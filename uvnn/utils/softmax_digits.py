@@ -1,3 +1,6 @@
+#TODO This file should be removed later, no need as now code is 
+# modular
+
 # Main functionality of oftmax regression for MINST data
 # training is done in ipython notebook with the same name because of 
 # better visual environment
