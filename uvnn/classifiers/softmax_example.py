@@ -20,6 +20,7 @@ class SoftmaxRegression(NNBase):
         self.lreg = reg # regularization
         self.alpha = alpha # default learning rate
         self.nclass = dims[1] # number of output classes
+        self.dims = dims # todo move to superclass
 
         ##
         # NNBase stores parameters in a special format
@@ -113,3 +114,8 @@ class SoftmaxRegression(NNBase):
         """Predict most likely class."""
         P = self.predict_proba_single(x)
         return np.argmax(P)
+    
+    def get_weights(self):
+        W = np.hstack([self.params.W, self.params.b.reshape(-1, 1)])
+        return (W, )
+

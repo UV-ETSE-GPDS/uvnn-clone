@@ -1,6 +1,7 @@
 from utils.preprocessors import BasicPreprocessor
 from utils.readers import CsvReader
 import numpy as np
+import re
 import matplotlib.pyplot as plt
 
 class Clfpipeline(object):
@@ -67,4 +68,16 @@ class Clfpipeline(object):
 
     
     def save_weights(self, filename):
-        pass
+        weights =  self.classifier.get_weights()
+        dims = self.classifier.dims
+        with open(filename, 'w') as f:
+            f.write(' '.join(map(str, dims)) + '\n')   # write dimensions
+            for w in weights:
+                f.write('\n')
+                f.write(' '.join(map(str, w.shape)) + '\n' )
+                # now start writing matrix
+                for r in w:
+                    f.write(' '.join(map(str, r)) + '\n')
+
+                #matr_str = re.sub('[\[\]]', '', np.array_str(w))
+                #f.write(matr_str)

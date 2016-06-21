@@ -20,6 +20,7 @@ class MLP(NNBase):
         self.lreg = reg # regularization
         self.alpha = alpha # default learning rate
         self.nclass = dims[1] # number of output classes
+        self.dims = dims # todo move to superclass
 
 
         param_dims = dict(W=(dims[1], dims[0]),
@@ -99,3 +100,8 @@ class MLP(NNBase):
         """Predict most likely class."""
         P = self.predict_proba_single(x)
         return np.argmax(P)
+    
+    def get_weights(self):
+        W1 = np.hstack([self.params.W, self.params.b1.reshape(-1, 1)])
+        W2 = np.hstack([self.params.U, self.params.b2.reshape(-1, 1)])
+        return (W1, W2)
