@@ -1,0 +1,8 @@
+# MLP for TRUNCMNIST DATASET
+# SPLITS(train, val, test) 0.800, 0.100, 0.100
+# ACCURACIES(train, val, test: 0.984, 0.920, 0.914
+400
+50
+10
+# Internal parameters from this line on, ignore it
+{"dims": [400, 50, 10], "costevery": 10, "alpha": 0.0001, "batchsize": -1, "reg": 0.001, "nepoch": 200}

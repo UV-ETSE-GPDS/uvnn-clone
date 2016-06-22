@@ -3,6 +3,8 @@ from utils.readers import CsvReader
 import numpy as np
 import re
 import matplotlib.pyplot as plt
+from classifiers.misc import minibatch, fullbatch
+import json
 
 class Clfpipeline(object):
     ''' Abastract class which given  the data input, produces performance 
@@ -19,6 +21,7 @@ class Clfpipeline(object):
         # up from configuration
         self.classifier = classifier
         self.reader = reader
+        self.splits = [0.8, 0.1, 0.1]
 
     def set_classifier(self, classifier):
         self.classifier = classifier
@@ -28,26 +31,43 @@ class Clfpipeline(object):
 
         def hook(X, y): 
             #needed to substract 1 from labels
-            return (X, y - 1)
-
+            return (X, y - min(y))
+        
         self.preprocessor = BasicPreprocessor(self.X, self.y, hook)
         self.preprocessor.preprocess_data()
+        np.savetxt('output/iris_data.csv', self.preprocessor.X, delimiter=',', fmt='%.8f') 
+        np.savetxt('output/iris_target.csv', self.preprocessor.y, delimiter=',', fmt='%d') 
         (self.X_train, self.y_train, self.X_dev, self.y_dev, self.X_test, 
-                self.y_test) = self.preprocessor.get_splits(0.8, 0.1, 0.1)
+                self.y_test) = self.preprocessor.get_splits(*self.splits)
 
         print self.X_test.shape, self.y_test.shape
         
     
     def train(self, **params):
+        # reconstruct parameters, TODO later you get it from conf file
+        costevery = params['costevery']
+        n_train = self.X_train.shape[0]
+        nepoch = params['nepoch']
+        if params['batchsize'] == -1:
+            idxiter = fullbatch(n_train, nepoch)
+        else:
+            idxiter = minibatch(n_train, params['batchsize'], nepoch)
+
         self.curve = self.classifier.train_sgd(self.X_train, self.y_train,  
-                devX = self.X_dev, devy = self.y_dev, **params)
+                devX = self.X_dev, devy = self.y_dev, costevery=costevery,
+                idxiter=idxiter)
         #counts, costs, costdevs  = zip(*curve)
         y_hat_train = self.classifier.predict(self.X_train)
         y_hat_dev = self.classifier.predict(self.X_dev)
         y_hat_test = self.classifier.predict(self.X_test)
-        print 'Accuracy on train', self.calc_accuracy(self.y_train, y_hat_train)
-        print 'Accuracy on dev', self.calc_accuracy(self.y_dev, y_hat_dev)
-        print 'Accuracy on test', self.calc_accuracy(self.y_test, y_hat_test)
+        self.accuracies = []
+        self.accuracies.append(self.calc_accuracy(self.y_train, y_hat_train))
+        self.accuracies.append(self.calc_accuracy(self.y_dev, y_hat_dev))
+        self.accuracies.append(self.calc_accuracy(self.y_test, y_hat_test))
+
+        print 'Accuracy on train', self.accuracies[0]
+        print 'Accuracy on dev', self.accuracies[1]
+        print 'Accuracy on test', self.accuracies[2]
 
     def calc_accuracy(self, y, y_hat):
         return np.count_nonzero(y == y_hat) / float(len(y_hat))
@@ -67,7 +87,7 @@ class Clfpipeline(object):
         plt.legend()
 
     
-    def save_weights(self, filename):
+    def save_weights_old(self, filename):
         weights =  self.classifier.get_weights()
         dims = self.classifier.dims
         with open(filename, 'w') as f:
@@ -81,3 +101,48 @@ class Clfpipeline(object):
 
                 #matr_str = re.sub('[\[\]]', '', np.array_str(w))
                 #f.write(matr_str)
+    
+    def save_weights(self, algo_name, dataset_name, confs, folder='output/'):
+        # TODO this part was coded fast, need to refarcotr it
+        weights =  self.classifier.get_weights()
+        dims = self.classifier.dims
+        # save preprocessed weights as well
+        dt_fn = '%s/data.csv' % (folder)
+        lb_fn = '%s/labels.csv' % (folder)
+        
+        # if needed to save preprocessed data
+        #np.savetxt(dt_fn, self.preprocessor.X, fmt='%.10f')
+        #np.savetxt(lb_fn, self.preprocessor.y, fmt='%d')
+
+
+        # write description
+        desc_filename = (folder + algo_name + '_' + 
+                dataset_name + '_' + 'DESC' + '.txt')
+        print 'descript filename', desc_filename
+        with open(desc_filename, 'w') as f:
+            msgs = []
+            msgs.append ('# %s for %s DATASET' % (algo_name, dataset_name))
+            msgs.append('# SPLITS(train, val, test) %.3f, %.3f, %.3f' % 
+                    tuple(self.splits))
+            msgs.append('# ACCURACIES(train, val, test: %.3f, %.3f, %.3f' % 
+                    tuple(self.accuracies))
+            print msgs
+            f.write('\n'.join(msgs) + '\n')
+            for d in dims:
+                f.write(str(d) + '\n')
+
+            f.write('# Internal parameters from this line on, ignore it\n')
+            jsonstr = json.dumps(confs)
+            f.write(jsonstr)
+        
+        for i, w in enumerate(weights):
+            wght_fn = '%s%s_%s_weights_%d.txt' % (folder, algo_name, 
+                    dataset_name, i + 1)
+            print 'weight filename', wght_fn
+            with open(wght_fn, 'w') as f:
+                #import ipdb; ipdb.set_trace()
+                f.write('\n'.join(map(str, w[:, -1])))
+                f.write('\n')
+                for col in range(0, w.shape[1] - 1):
+                    f.write('\n'.join(map(str, w[:, col])))
+                    f.write('\n')

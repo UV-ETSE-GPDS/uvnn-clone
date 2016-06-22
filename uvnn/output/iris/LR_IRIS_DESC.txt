@@ -1,0 +1,7 @@
+# LR for IRIS DATASET
+# SPLITS(train, val, test) 0.800, 0.100, 0.100
+# ACCURACIES(train, val, test: 0.983, 1.000, 1.000
+4
+3
+# Internal parameters from this line on, ignore it
+{"dims": [4, 3], "costevery": 50, "alpha": 0.01, "batchsize": -1, "reg": 0.0001, "nepoch": 300}

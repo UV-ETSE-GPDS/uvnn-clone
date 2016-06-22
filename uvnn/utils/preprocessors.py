@@ -19,7 +19,7 @@ class BasicPreprocessor(object):
     def preprocess_data(self):
         ''' Basic preprocessing normalizes the data, substracts mean
         and divides by sd '''
-        self.y = self.y.flatten()
+        self.y = self.y.flatten().astype(int)
         if self.hook is not None:
             self.X, self.y = self.hook(self.X, self.y)
         

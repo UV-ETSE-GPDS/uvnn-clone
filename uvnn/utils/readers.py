@@ -30,10 +30,10 @@ class CsvReader(object):
         
         if self.fn_labels is None:
             # labels are in the same file
-            features = np.ones(n_samples)
-            features[label_pos] = False # feature holds everything except labels
+            features = np.ones(n_features, dtype=np.bool)
+            features[self.label_pos] = False # feature holds everything except labels
             fulltrainX = fulltrain[:, features]
-            fulltrainy = fulltrain[:, label_pos] 
+            fulltrainy = fulltrain[:, self.label_pos] 
         else:
             labels = pd.read_csv(self.fn_labels, sep=self.sep, 
                     header=self.header)
