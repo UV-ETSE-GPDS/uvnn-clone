@@ -30,10 +30,17 @@ class CsvReader(object):
         
         if self.fn_labels is None:
             # labels are in the same file
-            features = np.ones(n_features, dtype=np.bool)
-            features[self.label_pos] = False # feature holds everything except labels
-            fulltrainX = fulltrain[:, features]
-            fulltrainy = fulltrain[:, self.label_pos] 
+            if self.label_pos is None:
+                # We only need have the input in this case, used for
+                # autoencoders
+                fulltrainX = fulltrain
+                fulltrainy = None
+            else:
+                # we have the label_post. and the targets are in the same file
+                features = np.ones(n_features, dtype=np.bool)
+                features[self.label_pos] = False # feature holds everything except labels
+                fulltrainX = fulltrain[:, features]
+                fulltrainy = fulltrain[:, self.label_pos] 
         else:
             labels = pd.read_csv(self.fn_labels, sep=self.sep, 
                     header=self.header)

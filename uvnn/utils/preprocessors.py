@@ -24,10 +24,10 @@ class BasicPreprocessor(object):
             self.X, self.y = self.hook(self.X, self.y)
         
         mean = np.mean(self.X, axis=0)
+        self.X = self.X - mean
         sd = np.std(self.X, axis=0)
         nonzero = sd > 0
         
-        self.X = self.X - mean
         self.X[:, nonzero] /= sd[nonzero]
     
     def get_splits(self, frac_train, frac_dev, frac_test, shuffle=True):
@@ -62,3 +62,17 @@ class BasicPreprocessor(object):
         
         print 'X_test shape', X_test.shape
         return (X_train, y_train, X_dev, y_dev, X_test, y_test)
+
+class AutoEncoderPP(BasicPreprocessor):
+    def __init__(self, X, y, hook=None):
+        BasicPreprocessor.__init__(self, X, y, hook)
+
+    def preprocess_data(self):
+        mean = np.mean(self.X, axis=0)
+        self.X = self.X - mean
+        #sd = np.std(self.X, axis=0)
+        #nonzero = sd > 0
+        
+        #self.X[:, nonzero] /= sd[nonzero]
+
+        self.y = self.X

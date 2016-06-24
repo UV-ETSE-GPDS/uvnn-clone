@@ -15,13 +15,14 @@ class Clfpipeline(object):
         - Classifier
     '''
 
-    def __init__(self, reader, classifier=None):
+    def __init__(self, reader, classifier=None, PreProc=BasicPreprocessor):
         ''' takes a json arg, extracts and builds parameters '''
         # TODO right now read from provide classifier later, build it 
         # up from configuration
         self.classifier = classifier
         self.reader = reader
         self.splits = [0.8, 0.1, 0.1]
+        self.PreProc = PreProc
 
     def set_classifier(self, classifier):
         self.classifier = classifier
@@ -33,10 +34,10 @@ class Clfpipeline(object):
             #needed to substract 1 from labels
             return (X, y - min(y))
         
-        self.preprocessor = BasicPreprocessor(self.X, self.y, hook)
+        self.preprocessor = self.PreProc(self.X, self.y, hook)
         self.preprocessor.preprocess_data()
-        np.savetxt('output/iris_data.csv', self.preprocessor.X, delimiter=',', fmt='%.8f') 
-        np.savetxt('output/iris_target.csv', self.preprocessor.y, delimiter=',', fmt='%d') 
+        #np.savetxt('output/iris_data.csv', self.preprocessor.X, delimiter=',', fmt='%.8f') 
+        #np.savetxt('output/iris_target.csv', self.preprocessor.y, delimiter=',', fmt='%d') 
         (self.X_train, self.y_train, self.X_dev, self.y_dev, self.X_test, 
                 self.y_test) = self.preprocessor.get_splits(*self.splits)
 
@@ -48,6 +49,8 @@ class Clfpipeline(object):
         costevery = params['costevery']
         n_train = self.X_train.shape[0]
         nepoch = params['nepoch']
+        acc_batch = params['acc_batch'] 
+
         if params['batchsize'] == -1:
             idxiter = fullbatch(n_train, nepoch)
         else:
@@ -55,7 +58,7 @@ class Clfpipeline(object):
 
         self.curve = self.classifier.train_sgd(self.X_train, self.y_train,  
                 devX = self.X_dev, devy = self.y_dev, costevery=costevery,
-                idxiter=idxiter)
+                idxiter=idxiter, acc_batch=acc_batch)
         #counts, costs, costdevs  = zip(*curve)
         y_hat_train = self.classifier.predict(self.X_train)
         y_hat_dev = self.classifier.predict(self.X_dev)

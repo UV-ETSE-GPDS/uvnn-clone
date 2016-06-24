@@ -1,16 +1,17 @@
+# TODO move to outside classifier package or change the name of "classifiers"
 from nn.base import NNBase
 from nn.math import softmax, make_onehot, tanh, tanhd
 from misc import random_weight_matrix
 import numpy as np
 
-class MLP(NNBase):
+class AutoEncoderSparse(NNBase):
     """
     Dummy example, to show how to implement a network.
     This implements softmax regression, trained by SGD.
     """
 
     def __init__(self, dims=[100, 5],
-                 reg=0.1, alpha=0.001,
+                 reg=0.1, alpha=0.001, ro = 0.2,
                  rseed=10):
         """
         Set up classifier: parameters, hyperparameters
@@ -41,25 +42,46 @@ class MLP(NNBase):
         z2 = np.dot(self.params.U, h) + self.params.b2
         return z2
 
-
     def _acc_grads(self, x, y):
-        """
-        Accumulate gradients from a training example.
-        """
-        ##
-        # Forward propagation
         z1 = self.params.W.dot(x) + self.params.b1
         h = tanh(z1)
         z2 = np.dot(self.params.U, h) + self.params.b2
         y_hat = z2
         
-        d2 = y_hat - y
+        d2 = (y_hat - y)
+        #d2 *= 1./len(y)
         self.grads.b2 += d2
         self.grads.U += np.outer(d2, h) + self.lreg * self.params.U
         d1 = np.dot(self.params.U.T, d2) * tanhd(z1) 
         
         self.grads.W += np.outer(d1, x) + self.lreg * self.params.W
         self.grads.b1 += d1
+
+
+
+    def _acc_grads_batch(self, X, Y):
+        """
+        Accumulate gradients from a training examples,
+        X matrix, Y vector of targets
+        """
+        ##
+        # Forward propagation
+        for i in range(len(Y)):
+            x = X[i]
+            y = Y[i]
+            z1 = self.params.W.dot(x) + self.params.b1
+            h = tanh(z1)
+            z2 = np.dot(self.params.U, h) + self.params.b2
+            y_hat = z2
+            
+            d2 = (y_hat - y)
+            #d2 *= (1./len(y))
+            self.grads.b2 += d2
+            self.grads.U += np.outer(d2, h) + self.lreg * self.params.U
+            d1 = np.dot(self.params.U.T, d2) * tanhd(z1) 
+            
+            self.grads.W += np.outer(d1, x) + self.lreg * self.params.W
+            self.grads.b1 += d1
 
 
     def compute_loss_full(self, X, y):
@@ -79,7 +101,9 @@ class MLP(NNBase):
         """
         # Forward propagation
         y_hat = self.forward_pass(x)
-        return (y_hat - y) ** 2
+        loss = np.sum((y_hat - y) ** 2)
+        #loss *= (1./len(y_hat))
+        return loss
     
     
     def predict(self, X):

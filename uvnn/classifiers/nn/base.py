@@ -252,6 +252,15 @@ class NNBase(object):
         """
         raise NotImplementedError("_acc_grads not yet implemented")
 
+    def _acc_grads_batch(self, X, y):
+        """
+
+        Accumulate gradients, data is not a single point but a batch
+
+        Subclass may implement it to be more efficient.
+        """
+
+
     def _apply_grad_acc(self, alpha=1.0):
         """
         Update parameters with accumulated gradients.
@@ -272,13 +281,17 @@ class NNBase(object):
         self._acc_grads(x, y)
         self._apply_grad_acc(alpha)
 
-    def train_minibatch_sgd(self, X, y, alpha):
+    def train_minibatch_sgd(self, X, y, alpha, acc_batch=False):
         """
         Generic minibatch SGD
         """
         self._reset_grad_acc()
-        for i in range(len(y)):
-            self._acc_grads(X[i], y[i])
+        if acc_batch:
+            # accumulate gradients by passing as matrix X and target vect y
+            self._acc_grads_batch(X, y)
+        else:
+            for i in range(len(y)):
+                self._acc_grads(X[i], y[i])
         self._apply_grad_acc(alpha)
 
 
@@ -423,7 +436,7 @@ class NNBase(object):
     def train_sgd(self, X, y,
                   idxiter=None, alphaiter=None,
                   printevery=10000, costevery=10000,
-                  devidx=None, devX=None, devy=None):
+                  devidx=None, devX=None, devy=None, acc_batch=False):
         """ X, y train set, devX, devy validation set """
         #import ipdb; ipdb.set_trace()
         if idxiter == None: # default training schedule
@@ -459,7 +472,7 @@ class NNBase(object):
                     print "  [%d]: mean train loss %g" % (counter, cost), devmsg
 
                 if hasattr(idx, "__iter__") and len(idx) > 1: # if iterable
-                    self.train_minibatch_sgd(X[idx], y[idx], alpha)
+                    self.train_minibatch_sgd(X[idx], y[idx], alpha, acc_batch)
                 elif hasattr(idx, "__iter__") and len(idx) == 1: # single point
                     idx = idx[0]
                     self.train_point_sgd(X[idx], y[idx], alpha)
