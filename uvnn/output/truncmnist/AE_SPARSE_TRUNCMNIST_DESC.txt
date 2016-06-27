@@ -1,0 +1,8 @@
+# AE_SPARSE for TRUNCMNIST DATASET
+# SPLITS(train, val, test) 0.800, 0.100, 0.100
+# Average Loss(RMSE) (train, val) : 9.75, 9.73, 0.000
+400
+250
+400
+# Internal parameters of network and training 
+{"costevery": 10, "batchsize": -1, "nepoch": 300, "dims": [400, 250, 400], "beta": 2, "acc_batch": true, "alpha": 9.7e-06, "ro": 0.05, "reg": 0.0}

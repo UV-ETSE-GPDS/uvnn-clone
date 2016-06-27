@@ -3,6 +3,9 @@ from numpy import *
 def sigmoid(x):
     return 1.0/(1.0 + exp(-x))
 
+def sigmoid_grad(x):
+    return sigmoid(x) * (1. - sigmoid(x))
+
 def softmax(x):
     xt = exp(x - max(x))
     return xt / sum(xt)

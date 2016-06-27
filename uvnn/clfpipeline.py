@@ -134,7 +134,7 @@ class Clfpipeline(object):
             for d in dims:
                 f.write(str(d) + '\n')
 
-            f.write('# Internal parameters from this line on, ignore it\n')
+            f.write('# Internal parameters of network and training \n')
             jsonstr = json.dumps(confs)
             f.write(jsonstr)
         
