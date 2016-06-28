@@ -5,7 +5,7 @@
 from numpy import *
 
 def random_weight_matrix(m, n):
-    e = sqrt(6) / sqrt(n + m)
+    e = sqrt(6) / sqrt(n + m + 1)
     A0 = random.uniform(-e, e, (m, n))
     assert(A0.shape == (m,n))
     return A0
