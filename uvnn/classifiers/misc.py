@@ -34,3 +34,35 @@ def merge_dicts(*dict_args):
     for dictionary in dict_args:
         result.update(dictionary)
     return result
+
+def vis_images(dataset, classifier, img_n, img_m, n):
+    """ Visualize input and output images of autoencoder
+    img_n, img_m : image dimensions
+    n : number of images to display
+    """
+    import numpy as np
+    mn = np.min(dataset)
+    mx = np.max(dataset)
+    print mn, mx
+    def num_to_col(num):
+        return 255. / (mx - mn) * (num + abs(mn))
+    vfunc = vectorize(num_to_col)
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(20, 4))
+    for i in range(n):
+        # display original
+        ax = plt.subplot(2, n, i + 1)
+        mg = vfunc(dataset[i])
+        plt.imshow(mg.reshape(img_n, img_m))
+        plt.gray()
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+
+        # display reconstruction
+        ax = plt.subplot(2, n, i + 1 + n)
+        dmg, _ = classifier.predict_single(dataset[i])
+        plt.imshow(dmg.reshape(img_n, img_m))
+        plt.gray()
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+    plt.show()
