@@ -50,6 +50,7 @@ class Clfpipeline(object):
         n_train = self.X_train.shape[0]
         nepoch = params['nepoch']
         acc_batch = params['acc_batch'] 
+        opt = params['opt']
 
         if params['batchsize'] == -1:
             idxiter = fullbatch(n_train, nepoch)
@@ -58,7 +59,7 @@ class Clfpipeline(object):
 
         self.curve = self.classifier.train_sgd(self.X_train, self.y_train,  
                 devX = self.X_dev, devy = self.y_dev, costevery=costevery,
-                idxiter=idxiter, acc_batch=acc_batch)
+                idxiter=idxiter, acc_batch=acc_batch, opt=opt)
         #counts, costs, costdevs  = zip(*curve)
         y_hat_train = self.classifier.predict(self.X_train)
         y_hat_dev = self.classifier.predict(self.X_dev)

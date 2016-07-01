@@ -259,6 +259,7 @@ class NNBase(object):
 
         Subclass may implement it to be more efficient.
         """
+        pass
 
 
     def _apply_grad_acc(self, alpha=1.0):
@@ -294,6 +295,22 @@ class NNBase(object):
                 self._acc_grads(X[i], y[i])
         self._apply_grad_acc(alpha)
 
+    def train_minibatch_rmsprop(self, X, y, alpha, options, acc_batch=False):
+        ''' RMSPROP '''
+        self._reset_grad_acc()
+        if acc_batch:
+            # accumulate gradients by passing as matrix X and target vect y
+            self._acc_grads_batch(X, y)
+        else:
+            for i in range(len(y)):
+                self._acc_grads(X[i], y[i])
+        
+        # now apply rmsprop
+        options['moving_mean_squared'] = options['decay'] * options['moving_mean_squared'] \
+                                                         + (1 - options['decay']) * self.grads.full ** 2
+        self.params.full -= self.grads.full * alpha / np.sqrt(options['moving_mean_squared'] + 1e-8)
+
+        # TODO do the same for sparse
 
     def grad_check(self, x, y, eps=1e-4, tol=1e-6,
                    outfd=sys.stderr, verbose=False,
@@ -436,8 +453,18 @@ class NNBase(object):
     def train_sgd(self, X, y,
                   idxiter=None, alphaiter=None,
                   printevery=10000, costevery=10000,
-                  devidx=None, devX=None, devy=None, acc_batch=False):
-        """ X, y train set, devX, devy validation set """
+                  devidx=None, devX=None, devy=None, acc_batch=False, opt='sgd'):
+        ''' X, y train set, devX, devy validation set
+            Optimizes the weight given dataset
+            idxiter: iterator for training examples
+            alphaiter: iterator for learning rate
+            acc_batch: examples are passed as matricies to
+            gradient accumulation.
+            opt: optimization algorithm SGD, RMSPROP
+        '''
+        # TODO change the name of function since it's not only
+        # sgd anymore
+
         #import ipdb; ipdb.set_trace()
         if idxiter == None: # default training schedule
             idxiter = xrange(len(y))
@@ -448,7 +475,14 @@ class NNBase(object):
         costdev = None
         counter = 0
         t0 = time.time()
+        
 
+        # rmsprop params
+        options = {}
+        options['decay'] = 0.9
+        if opt == 'rmsprop':
+            options['moving_mean_squared'] = 1
+        
         try:
             print "Begin SGD..."
             for idx, alpha in itertools.izip(idxiter, alphaiter):
@@ -470,9 +504,11 @@ class NNBase(object):
                     if costdev is not None:
                         devmsg = "mean valid loss %g" % costdev
                     print "  [%d]: mean train loss %g" % (counter, cost), devmsg
-
                 if hasattr(idx, "__iter__") and len(idx) > 1: # if iterable
-                    self.train_minibatch_sgd(X[idx], y[idx], alpha, acc_batch)
+                    if opt == 'rmsprop':
+                        self.train_minibatch_rmsprop(X[idx], y[idx], alpha, options, acc_batch)
+                    elif opt == 'sgd':
+                        self.train_minibatch_sgd(X[idx], y[idx], alpha, acc_batch)
                 elif hasattr(idx, "__iter__") and len(idx) == 1: # single point
                     idx = idx[0]
                     self.train_point_sgd(X[idx], y[idx], alpha)
