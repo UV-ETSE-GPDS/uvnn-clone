@@ -453,7 +453,8 @@ class NNBase(object):
     def train_sgd(self, X, y,
                   idxiter=None, alphaiter=None,
                   printevery=10000, costevery=10000,
-                  devidx=None, devX=None, devy=None, acc_batch=False, opt='sgd'):
+                  devidx=None, devX=None, devy=None, acc_batch=False, opt='sgd',
+                  tolerance=-1):
         ''' X, y train set, devX, devy validation set
             Optimizes the weight given dataset
             idxiter: iterator for training examples
@@ -461,6 +462,9 @@ class NNBase(object):
             acc_batch: examples are passed as matricies to
             gradient accumulation.
             opt: optimization algorithm SGD, RMSPROP
+            tolarence: if the current iteration doesnt improve  the test
+                       loss compared to the worst one in the last 3 *costevery*,
+                       round, if tolarence is None ignore the parameter.
         '''
         # TODO change the name of function since it's not only
         # sgd anymore
@@ -514,6 +518,19 @@ class NNBase(object):
                     self.train_point_sgd(X[idx], y[idx], alpha)
                 else:
                     self.train_point_sgd(X[idx], y[idx], alpha)
+                
+                # check if the required tollarence is met 
+                if tolerance != -1: # tolerance isn't set
+                    # calculate worst test score in the last few iterations
+                    if len(costs) > 2: #there needs to be at least 2 elem 
+                        last_test_score = costs[-1][1]
+                        best_so_far = max(x[1] for x in costs[-4: -1])
+                        if last_test_score > best_so_far - tolerance:
+                            # stop training
+                            print "SGD interrupted tolerance is met"
+                            print "saw %d examples in %.02f seconds." % (counter, 
+                                    time.time() - t0)
+                            return costs
 
                 counter += 1
         except KeyboardInterrupt as ke:

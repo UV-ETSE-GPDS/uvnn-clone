@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from classifiers.misc import minibatch, fullbatch
 import json
 
+
 class Clfpipeline(object):
     ''' Abastract class which given  the data input, produces performance 
     metrics, and outputs weight and topology of the model. 
@@ -51,6 +52,8 @@ class Clfpipeline(object):
         nepoch = params['nepoch']
         acc_batch = params['acc_batch'] 
         opt = params['opt']
+        tolerance = params['tolerance']
+        loss_metric = params['loss_metric']
 
         if params['batchsize'] == -1:
             idxiter = fullbatch(n_train, nepoch)
@@ -59,22 +62,45 @@ class Clfpipeline(object):
 
         self.curve = self.classifier.train_sgd(self.X_train, self.y_train,  
                 devX = self.X_dev, devy = self.y_dev, costevery=costevery,
-                idxiter=idxiter, acc_batch=acc_batch, opt=opt)
+                idxiter=idxiter, acc_batch=acc_batch, opt=opt, 
+                tolerance=tolerance)
         #counts, costs, costdevs  = zip(*curve)
+        
         y_hat_train = self.classifier.predict(self.X_train)
         y_hat_dev = self.classifier.predict(self.X_dev)
         y_hat_test = self.classifier.predict(self.X_test)
-        self.accuracies = []
-        self.accuracies.append(self.calc_accuracy(self.y_train, y_hat_train))
-        self.accuracies.append(self.calc_accuracy(self.y_dev, y_hat_dev))
-        self.accuracies.append(self.calc_accuracy(self.y_test, y_hat_test))
+        
+        predictions  = {'TRAIN':(self.y_train, y_hat_train),
+                'VALID':(self.y_dev, y_hat_dev),
+                'TEST':(self.y_test, y_hat_test)} 
+        
+        self.losses = {} 
 
-        print 'Accuracy on train', self.accuracies[0]
-        print 'Accuracy on dev', self.accuracies[1]
-        print 'Accuracy on test', self.accuracies[2]
+        if loss_metric == 'accuracy':
+            self.calc_losses_accuracy(predictions)
+        elif loss_metric == 'MSE':
+            self.calc_losses_mse(predictions)
+        else:
+            raise Exception('Unknown loss function')
+    
+
+    def calc_losses_accuracy(self, predictions):
+        for set_name, (y, y_hat) in predictions.items():
+            accuracy = self.calc_accuracy(y, y_hat)
+            print 'Accuracy on %s %.4f' % (set_name, accuracy)
+            self.losses[set_name] = accuracy
+
+    def calc_losses_mse(self, predictions):
+        for set_name, (y, y_hat) in predictions.items():
+            mse = self.calc_mse(y, y_hat)
+            print 'MSE on %s %.4f' % (set_name, mse)
+            self.losses[set_name] = mse
 
     def calc_accuracy(self, y, y_hat):
         return np.count_nonzero(y == y_hat) / float(len(y_hat))
+
+    def calc_mse(self, y, y_hat):
+        return np.mean((y-y_hat) ** 2)
 
     def plot(self):
         # plot last training run
