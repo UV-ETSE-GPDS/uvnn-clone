@@ -48,3 +48,13 @@ class CsvReader(object):
             fulltrainy = labels.as_matrix()
         
         return (fulltrainX, fulltrainy)
+
+class DummyReader(object):
+    ''' Useful reader when we already have the data from somewhere else then file'''
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+    def load_data(self):
+        return (self.X, self.y)
+

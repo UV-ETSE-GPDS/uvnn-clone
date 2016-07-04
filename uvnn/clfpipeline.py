@@ -16,14 +16,26 @@ class Clfpipeline(object):
         - Classifier
     '''
 
-    def __init__(self, reader, classifier=None, PreProc=BasicPreprocessor):
-        ''' takes a json arg, extracts and builds parameters '''
-        # TODO right now read from provide classifier later, build it 
+    def __init__(self, reader, classifier=None, PreProc=BasicPreprocessor,
+            load_now=True):
+        
+        ''' takes a json arg, extracts and builds parameters 
+            reader - data reader object
+            classifier classifier object
+            preProc - Preprocessor class
+            load_now - # if true will laod and prepare now, or else
+                        you need to call pipe.prepare_data() later
+        '''
+        
+        # TODO right now read from provided classifier later, build it 
         # up from configuration
+        
         self.classifier = classifier
         self.reader = reader
         self.splits = [0.8, 0.1, 0.1]
         self.PreProc = PreProc
+        if load_now:
+            self.prepare_data()
 
     def set_classifier(self, classifier):
         self.classifier = classifier
@@ -47,23 +59,34 @@ class Clfpipeline(object):
     
     def train(self, **params):
         # reconstruct parameters, TODO later you get it from conf file
-        costevery = params['costevery']
+        # params for training a classifier or autoencoder
+        
+        #costevery = params['costevery']
         n_train = self.X_train.shape[0]
-        nepoch = params['nepoch']
-        acc_batch = params['acc_batch'] 
-        opt = params['opt']
-        tolerance = params['tolerance']
-        loss_metric = params['loss_metric']
+        #nepoch = params['nepoch']
+        #acc_batch = params['acc_batch'] 
+        #opt = params['opt']
+        #tolerance = params['tolerance']
+        #loss_metric = params['loss_metric']
+        
+        if 'batchsize' in params:
+            # the batchsize is an int > 0 if we pass mini batches, it's -1 if 
+            # we pass full batches. we need to constract idxiter object which
+            # is a python generator for generating sample sequences to train.
+            if params['batchsize'] == -1:
+                params['idxiter'] = fullbatch(n_train, params['nepoch'])
+            else:
+                params['idxiter'] = minibatch(n_train, params['batchsize'], 
+                        params['nepoch'])
+            params.pop('batchsize')
+            params.pop('nepoch')
 
-        if params['batchsize'] == -1:
-            idxiter = fullbatch(n_train, nepoch)
-        else:
-            idxiter = minibatch(n_train, params['batchsize'], nepoch)
+        # loss metric is for pipeline to use only at this point
+        loss_metric = params['loss_metric']
+        params.pop('loss_metric')
 
         self.curve = self.classifier.train_sgd(self.X_train, self.y_train,  
-                devX = self.X_dev, devy = self.y_dev, costevery=costevery,
-                idxiter=idxiter, acc_batch=acc_batch, opt=opt, 
-                tolerance=tolerance)
+                devX = self.X_dev, devy = self.y_dev, **params)
         #counts, costs, costdevs  = zip(*curve)
         
         y_hat_train = self.classifier.predict(self.X_train)
@@ -156,8 +179,10 @@ class Clfpipeline(object):
             msgs.append ('# %s for %s DATASET' % (algo_name, dataset_name))
             msgs.append('# SPLITS(train, val, test) %.3f, %.3f, %.3f' % 
                     tuple(self.splits))
-            msgs.append('# ACCURACIES(train, val, test: %.3f, %.3f, %.3f' % 
-                    tuple(self.accuracies))
+
+            #msgs.append('# Losses(train, val, test: %.3f, %.3f, %.3f' % 
+                    #tuple(self.losses))
+            # TODO add losses
             print msgs
             f.write('\n'.join(msgs) + '\n')
             for d in dims:
@@ -178,3 +203,7 @@ class Clfpipeline(object):
                 for col in range(0, w.shape[1] - 1):
                     f.write('\n'.join(map(str, w[:, col])))
                     f.write('\n')
+
+    def get_weights(self):
+        return self.classifier.get_weights()
+

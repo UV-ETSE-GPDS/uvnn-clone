@@ -14,7 +14,7 @@ class MLP(NNBase):
 
     def __init__(self, dims=[100, 30, 20, 5],
                  reg=0.1, alpha=0.001,
-                 rseed=10, activation='tanh'):
+                 rseed=10, activation='tanh', init_weights=[]):
         """
         Set up classifier: parameters, hyperparameters
         """
@@ -50,8 +50,18 @@ class MLP(NNBase):
 
         #self.sparams.L = wv.copy() # store own representations
         # init weights
-        for i in range(1, len(self.dims)):
-            self._set_param('W', i, random_weight_matrix(dims[i], dims[i -1]))
+        
+        # layers for which init_weights aren't passed are initialized randomly
+        if len(init_weights) == 0:
+            for i in range(1, len(self.dims)):
+                if i - 1 < len(init_weights):
+                    # we have the corresponding weights passed for this layer
+                    cur_weight = init_weights[i-1]
+                    assert (cur_weight.shape == (dims[i], dims[i - 1]), 
+                            ("passed initial weight dimensions don't match"))
+                else:
+                    cur_weight = random_weight_matrix(dims[i], dims[i -1])
+                self._set_param('W', i, cur_weight)
 
     def _set_param(self, param_name, ind, val):
         ''' set parameters

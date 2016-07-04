@@ -16,7 +16,7 @@ def KLD(ro_hat, ro):
 
 
 class AutoEncoderSparse(NNBase):
-    def __init__(self, dims=[100, 5],
+    def __init__(self, dims=[100, 5, 100],
                  reg=0.1, alpha=0.001, ro = 0.05,
                  rseed=10, beta=0.2):
         """
@@ -26,7 +26,6 @@ class AutoEncoderSparse(NNBase):
         # Store hyperparameters
         self.lreg = reg # regularization
         self.alpha = alpha # default learning rate
-        self.nclass = dims[1] # number of output classes
         self.dims = dims # todo move to superclass
         self.ro = ro # ro sparsity parameter
         self.beta = beta  # sparsity penalty 
@@ -120,7 +119,6 @@ class AutoEncoderSparse(NNBase):
         # sparsity term loss
         return 0.5 * full_loss + self.beta * Jsparsity + Jreg
 
-
     
     def predict(self, X):
         return np.apply_along_axis(self.predict_single, 1, X)
@@ -128,6 +126,13 @@ class AutoEncoderSparse(NNBase):
     def predict_single(self, x):
         y_hat, hidd = self.forward_pass(x)
         return y_hat
+    def predict_hidden_single(self, x):
+        y_hat, hidd = self.forward_pass(x)
+        return hidd
+
+    def predict_hidden(self, X):
+        # get hidden layers instead of predicitons, used for stacked training
+        return np.apply_along_axis(self.predict_hidden_single, 1, X)
     
     def get_weights(self):
         W1 = np.hstack([self.params.W, self.params.b1.reshape(-1, 1)])
