@@ -60,7 +60,7 @@ def vis_images(dataset, classifier, img_n, img_m, n):
 
         # display reconstruction
         ax = plt.subplot(2, n, i + 1 + n)
-        dmg, _ = classifier.predict_single(dataset[i])
+        dmg = classifier.predict_single(dataset[i])
         plt.imshow(dmg.reshape(img_n, img_m))
         plt.gray()
         ax.get_xaxis().set_visible(False)

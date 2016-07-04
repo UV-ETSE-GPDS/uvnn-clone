@@ -16,16 +16,11 @@ def KLD(ro_hat, ro):
 
 
 class AutoEncoderSparse(NNBase):
-    """
-    Dummy example, to show how to implement a network.
-    This implements softmax regression, trained by SGD.
-    """
-
     def __init__(self, dims=[100, 5],
                  reg=0.1, alpha=0.001, ro = 0.05,
                  rseed=10, beta=0.2):
         """
-        Set up classifier: parameters, hyperparameters
+        Set up autoencoder: parameters, hyperparameters
         """
         ##
         # Store hyperparameters
@@ -86,7 +81,7 @@ class AutoEncoderSparse(NNBase):
             z2 = np.dot(self.params.U, h) + self.params.b2
             y_hat = z2
             
-            d2 = (y_hat - y)
+            d2 = (y_hat - y) 
             #d2 *= (1./len(y))
             self.grads.b2 += d2
             self.grads.U += np.outer(d2, h) + self.lreg * self.params.U
@@ -131,7 +126,8 @@ class AutoEncoderSparse(NNBase):
         return np.apply_along_axis(self.predict_single, 1, X)
 
     def predict_single(self, x):
-        return self.forward_pass(x)
+        y_hat, hidd = self.forward_pass(x)
+        return y_hat
     
     def get_weights(self):
         W1 = np.hstack([self.params.W, self.params.b1.reshape(-1, 1)])

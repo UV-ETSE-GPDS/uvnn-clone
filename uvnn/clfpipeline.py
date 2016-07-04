@@ -100,7 +100,9 @@ class Clfpipeline(object):
         return np.count_nonzero(y == y_hat) / float(len(y_hat))
 
     def calc_mse(self, y, y_hat):
-        return np.mean((y-y_hat) ** 2)
+        print y.shape
+        print y_hat.shape
+        return np.mean(np.mean((y-y_hat) ** 2, axis=-1))
 
     def plot(self):
         # plot last training run
