@@ -463,7 +463,7 @@ class NNBase(object):
             gradient accumulation.
             opt: optimization algorithm SGD, RMSPROP
             tolarence: if the current iteration doesnt improve  the test
-                       loss compared to the worst one in the last 3 *costevery*,
+                       loss compared to the worst one in the last 5 *costevery*,
                        round, if tolarence is None ignore the parameter.
         '''
         # TODO change the name of function since it's not only
@@ -524,7 +524,7 @@ class NNBase(object):
                     # calculate worst test score in the last few iterations
                     if len(costs) > 2: #there needs to be at least 2 elem 
                         last_test_score = costs[-1][1]
-                        best_so_far = max(x[1] for x in costs[-4: -1])
+                        best_so_far = max(x[1] for x in costs[-6: -1])
                         if last_test_score > best_so_far - tolerance:
                             # stop training
                             print "SGD interrupted tolerance is met"

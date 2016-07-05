@@ -52,16 +52,14 @@ class MLP(NNBase):
         # init weights
         
         # layers for which init_weights aren't passed are initialized randomly
-        if len(init_weights) == 0:
-            for i in range(1, len(self.dims)):
-                if i - 1 < len(init_weights):
-                    # we have the corresponding weights passed for this layer
-                    cur_weight = init_weights[i-1]
-                    assert (cur_weight.shape == (dims[i], dims[i - 1]), 
-                            ("passed initial weight dimensions don't match"))
-                else:
-                    cur_weight = random_weight_matrix(dims[i], dims[i -1])
-                self._set_param('W', i, cur_weight)
+        for i in range(1, len(self.dims)):
+            if i - 1 < len(init_weights):
+                # we have the corresponding weights passed for this layer
+                cur_weight = init_weights[i-1]
+                assert cur_weight.shape == (dims[i], dims[i - 1]), ("passed initial weight dimensions don't match")
+            else:
+                cur_weight = random_weight_matrix(dims[i], dims[i -1])
+            self._set_param('W', i, cur_weight)
 
     def _set_param(self, param_name, ind, val):
         ''' set parameters
