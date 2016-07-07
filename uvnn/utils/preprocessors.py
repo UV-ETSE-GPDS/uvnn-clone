@@ -19,7 +19,7 @@ class BasicPreprocessor(object):
     def preprocess_data(self):
         ''' Basic preprocessing normalizes the data, substracts mean
         and divides by sd '''
-        self.y = self.y.flatten().astype(int)
+        self.y = np.array(self.y).flatten().astype(int)
         if self.hook is not None:
             self.X, self.y = self.hook(self.X, self.y)
         
@@ -68,6 +68,7 @@ class AutoEncoderPP(BasicPreprocessor):
         BasicPreprocessor.__init__(self, X, y, hook)
 
     def preprocess_data(self):
+        #self.X = self.X / 255.
         mean = np.mean(self.X, axis=0)
         self.X = self.X - mean
         #sd = np.std(self.X, axis=0)
@@ -76,3 +77,30 @@ class AutoEncoderPP(BasicPreprocessor):
         #self.X[:, nonzero] /= sd[nonzero]
 
         self.y = self.X
+
+class ColorImagePP(BasicPreprocessor):
+    # Class name says the 
+    def __init__(self, X, y, hook=None):
+        BasicPreprocessor.__init__(self, X, y, hook)
+
+    def preprocess_data(self):
+        self.X = self.X / 255.
+        #mean = np.mean(self.X, axis=0)
+        #self.X = self.X - 0.5
+        #sd = np.std(self.X, axis=0)
+        #nonzero = sd > 0
+        
+        #self.X[:, nonzero] /= sd[nonzero]
+
+        self.y = self.X
+
+class MnistPP(BasicPreprocessor):
+    def __init__(self, X, y, hook=None):
+        BasicPreprocessor.__init__(self, X, y, hook)
+
+    def preprocess_data(self):
+        self.X = self.X / 255.
+        #self.X = self.X - 0.5
+        self.y = self.X
+
+
