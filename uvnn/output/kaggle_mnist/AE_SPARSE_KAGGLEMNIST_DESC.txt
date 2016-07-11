@@ -1,0 +1,8 @@
+# AE_SPARSE for KAGGLEMNIST DATASET
+# SPLITS(train, val, test) 0.800, 0.100, 0.100
+# Losses MSE: 0.0085, 0.0091, 0.0091 (Jsparsity:0.03, mean train loss 3.42)
+784
+196
+784
+# Internal parameters of network and training 
+{"opt": "rmsprop", "costevery": 50, "batchsize": 600, "nepoch": 5000, "dims": [784, 196, 784], "beta": 3, "acc_batch": true, "loss_metric": "MSE", "alpha": 0.001, "ro": 0.1, "tolerance": -1, "reg": 0.0}
