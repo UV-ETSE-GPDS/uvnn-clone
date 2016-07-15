@@ -1,4 +1,5 @@
 import numpy as np
+from collections import defaultdict
 
 conf = {'time_step': 2, # simulation step second
        'simulation_time':300, # seconds
@@ -20,28 +21,44 @@ conf = {'time_step': 2, # simulation step second
         'a_plus':2,
         'a_minus':-2,
        }
+def periodic_spike_train(period, time_length):
+    ''' Get periodic spike train ie, 0, 5, 10, ... '''
+    return range(0, time_length, period)
 
-def get_presynaptics(time, spike_periods):
+def get_presynaptics(time, spike_dict):
     ''' Get which neurons are firing on provided time
 
     Right now we feed spike_freq but it can be array of spikes trains later
 
     Args: 
         time: current clock cycle
-        spike_periods: numpy array of preiod of each spikes
+        spike_dict: <time, [n1, n2..]>
     Return:
-        bool array of currently active active neurons
+        array of currently active active neurons
     '''
-    active = []
-    for i, period in enumerate(spike_periods):
-        if time % period == 0:
-            active.append(i)
+    #TODO(remove this function if it stays too short)
+    return spike_dict[time]
 
-    return active
+def get_spike_dict(spike_trains):
+    ''' build up a map with key - time, value - array of neurons which spike
+    at this moment 
+    
+    Args: 
+        spike_trains: arrays of spike trains for each neuron
+
+    Return:
+        Dictionary of type <time, [n1, n2,...] > where n1, n2 .. are 
+        neuron indicies which fire on timestep time:
+    '''
+    spike_dict = defaultdict(list)
+    for neuron, times in enumerate(spike_trains):
+        for spike_time in times:
+            spike_dict[spike_time].append(neuron)
+    return spike_dict
 
 
 def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr, 
-        n_input, spike_periods, n_output, tau_plus, tau_minus, a_plus, a_minus,
+        n_input, spike_trains, n_output, tau_plus, tau_minus, a_plus, a_minus,
         w_max, w_min, windowsize, margin, sigma):
         
     init_potentials = np.zeros(n_output)
@@ -58,12 +75,11 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
     
     weights = np.random.rand(n_input, n_output) # initialize weights
     
-    spike_periods = np.array(spike_periods) # just convert to numpy array
+    # build up a dict which will help us getting spikes on timestep
+    spike_dict = get_spike_dict(spike_trains)
 
 
     for time in range(0, simulation_time, time_step): 
-        if time % 10 == 0:
-            print weights
         #import ipdb; ipdb.set_trace()
         cur_potentials = traces[-1]
         new_potentials = np.copy(cur_potentials)
@@ -79,7 +95,7 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
         already_updated = set() # keep already updated neurons not to update twice
         for pre_time in range(time - windowsize, time - margin):
             delta_time = time - pre_time
-            pre_neurons = get_presynaptics(pre_time, spike_periods)
+            pre_neurons = get_presynaptics(pre_time, spike_dict)
             # distract neurons already updated
             pre_neurons = list(set(pre_neurons) - already_updated)
             dw = a_plus * np.exp(delta_time / float(tau_plus))
@@ -97,7 +113,7 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
         post_neurons = out_spikes_last < time - t_refr
         
         # get presynaptic neurons which fires now
-        pre_neurons = get_presynaptics(time, spike_periods)
+        pre_neurons = get_presynaptics(time, spike_dict)
 
         for post_neuron in np.nonzero(post_neurons)[0]:
             for pre_neuron in pre_neurons:
@@ -124,5 +140,6 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
 
     return traces, out_spikes
 
-
 #simulate(**conf)
+
+
