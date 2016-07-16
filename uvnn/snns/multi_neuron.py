@@ -1,29 +1,46 @@
 import numpy as np
 from collections import defaultdict
 
-conf = {'time_step': 2, # simulation step second
-       'simulation_time':300, # seconds
-        'D':1.5, # potential degradation value
-        'p_max':0.5,
-        'p_min':-10,
+sim_time = 400
+frag_time = 100
+def gen_spike(periods = [10, 40], sim_time = 200, frag_time=100):
+    # build a spike train with alternating periods
+    ret = []
+    t_now = 0
+    cur_period = 0
+    while (t_now < sim_time):
+        fragment = range(t_now, t_now + frag_time, periods[cur_period])
+        ret.extend(fragment)
+        t_now += frag_time
+        cur_period = (cur_period + 1) % len(periods)        
+    return ret
+
+train1 = gen_spike([6, 23], sim_time, frag_time)
+train2 = gen_spike([23, 6], sim_time, frag_time)
+train3 = gen_spike([6, 23], sim_time, frag_time)
+train4 = gen_spike([23, 6], sim_time, frag_time)
+spike_trains = [train1, train2, train3, train4]
+
+conf = {'time_step': 1, # simulation step second
+       'simulation_time':sim_time, # seconds
+        'D':0.3, # potential degradation value
+        'p_max':3,
+        'p_min':-2,
         'p_rest':0,
-        't_refr':9,
+        't_refr':5,
         'n_input':4,
         'n_output':2,
-        'spike_periods':[1, 20, 40, 60],
+        'spike_trains':spike_trains,
         'w_max':2,
         'w_min':-1,
-        'sigma':0.4,
+        'sigma':0.1,
         'margin':2,
         'windowsize':5,
-        'tau_plus':3,
-        'tau_minus':3,
-        'a_plus':2,
-        'a_minus':-2,
+        'tau_plus':10,
+        'tau_minus':10,
+        'a_plus':0.2,
+        'a_minus':-0.2,
        }
-def periodic_spike_train(period, time_length):
-    ''' Get periodic spike train ie, 0, 5, 10, ... '''
-    return range(0, time_length, period)
 
 def get_presynaptics(time, spike_dict):
     ''' Get which neurons are firing on provided time
@@ -77,10 +94,11 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
     
     # build up a dict which will help us getting spikes on timestep
     spike_dict = get_spike_dict(spike_trains)
-
+    w_trace = []
 
     for time in range(0, simulation_time, time_step): 
         #import ipdb; ipdb.set_trace()
+        w_trace.append(weights.copy()) 
         cur_potentials = traces[-1]
         new_potentials = np.copy(cur_potentials)
 
@@ -93,18 +111,23 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
 
         # update weights for presynaptic neurons (positively correlated)
         already_updated = set() # keep already updated neurons not to update twice
-        for pre_time in range(time - windowsize, time - margin):
-            delta_time = time - pre_time
-            pre_neurons = get_presynaptics(pre_time, spike_dict)
-            # distract neurons already updated
-            pre_neurons = list(set(pre_neurons) - already_updated)
-            dw = a_plus * np.exp(delta_time / float(tau_plus))
-            weights[pre_neurons] += sigma * dw * (w_max - weights[pre_neurons])
-            already_updated = already_updated | set(pre_neurons) # unite
+        if np.any(fired):
+            # TODO consider refactor 3 time nesting
+            for pre_time in range(time - windowsize, time - margin):
+                delta_time = time - pre_time
+                pre_neurons = get_presynaptics(pre_time, spike_dict)
+                # distract neurons already updated
+                #if len(pre_neurons) > 0:
+                #    import ipdb; ipdb.set_trace()
+                pre_neurons = list(set(pre_neurons) - already_updated)
+                if len(pre_neurons) > 0: 
+                    dw = a_plus * np.exp(delta_time / float(tau_plus))
+                    weights[pre_neurons, fired] += sigma * dw * (w_max - weights[pre_neurons, fired])
+                    already_updated = already_updated | set(pre_neurons) # unite
 
         
         # depolarize strongly negative neurons
-        strongly_negative = cur_potentials < p_max
+        strongly_negative = cur_potentials < p_min
         new_potentials[strongly_negative] = p_rest
 
             
@@ -118,28 +141,33 @@ def simulate(time_step, simulation_time, D, p_max, p_min, p_rest, t_refr,
         for post_neuron in np.nonzero(post_neurons)[0]:
             for pre_neuron in pre_neurons:
                 new_potentials[post_neuron] += weights[pre_neuron][post_neuron]
-            new_potentials[post_neuron] -= D # decay
+        
         
         # now update wieghts for postsyanptic neurons (negatively correlated)
-        alread_updated = set()
+        already_updated = set()
         for pre_time in range(time - windowsize, time - margin):
             for post_neuron in range(n_output):
                 # check if already updated 
-                if post_neuron in alread_updated:
+                if post_neuron in already_updated:
                     continue
                 # check if post_neuron was fired before pre_neuron
                 if pre_time in out_spikes[post_neuron]:
                     delta_time = time - pre_time
                     dw = a_minus * np.exp(delta_time / float(tau_minus))
-                    #import ipdb; ipdb.set_trace()
+                    if np.count_nonzero(post_neurons) > 0:
+                        pass
+                        #import ipdb; ipdb.set_trace()
                     weights[pre_neurons, post_neuron] += (sigma * dw * 
                             (weights[pre_neurons, post_neuron]-w_min))
                 already_updated.add(post_neuron)
+        
+        
+        # degrade potentials > p_rest
+        to_degrade = new_potentials > p_rest
+        new_potentials[to_degrade] -= D
 
         traces.append(new_potentials)  # keep potential trace
 
-    return traces, out_spikes
+    return traces, out_spikes, w_trace
 
-#simulate(**conf)
-
-
+simulate(**conf)
