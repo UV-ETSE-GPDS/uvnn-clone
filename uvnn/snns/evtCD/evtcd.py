@@ -3,18 +3,25 @@ import numpy as np
 from collections import namedtuple
 from Queue import PriorityQueue
 
+from IPython import display #plotting purposes
+import matplotlib.pyplot as plt
+from uvnn.utils.images import show_images
+import time
 #unknown things
 # stdp_lag ??
 # inp_scale ??
 # timespan ??
 # min_thr ??
+# axon_delay ?? 
 
 Param = namedtuple('Parameters', 
         ['eta', 'thresh_eta', 'numspikes', 'timespan', 'tau', 'thr',
-            'inp_scale', 't_refrac', 'stdp_lag', 'min_thr'])
+            'inp_scale', 't_refrac', 'stdp_lag', 'min_thr', 'plot_things', 
+            'axon_delay'])
 
 cf = Param(eta=1e-3, thresh_eta=0, numspikes=100, timespan=10, tau=0.05, 
-        thr=1, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1)
+        thr=1, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
+        plot_things=False, axon_delay=0.0001)
 
 def img_to_spike(x, numspikes, timespan):
     ''' return pairs of spike_address, time '''
@@ -50,6 +57,7 @@ def train_network(cf, vis_size, hid_size):
     refrac_end = []
     last_update = []
     spike_count = [0, 0, 0, 0]
+    calc_recons = [False, False, False, False]
     thr = []
     W = np.random.rand(vis_size, hid_size)
 
@@ -67,27 +75,29 @@ def train_network(cf, vis_size, hid_size):
     for spike_train_sample in spike_trains: 
         # spike train is a one digit encoded to pairs (spike_address, time)
         # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
+        t_passed = 0
         for time, spike in spike_train_sample:
-            pq.put((time, -1, spike))   # spike fired from '-1th' layer
+            pq.put((time + t_passed, -1, spike))   # spike fired from '-1th' layer
+            t_passed += cf.timespan
 
         while not pq.empty():
             spike_triplet = pq.get()
             process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
-                    last_update, refrac_end, spike_count)
+                    last_update, refrac_end, spike_count, calc_recons, W)
 
     
 def add_noise(membrane, layer_num):
     pass
 
 def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes, 
-        last_update, refrac_end, spike_count):
+        last_update, refrac_end, spike_count, calc_recons, weights):
     ''' Params:
             spike triplet - has a form of (time, layer, address) 
             cf - configs
             pq - priority queue of spike trains
     '''
     
-    #import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace() # BREAKPOINT
     sp_time, sp_layer, sp_address = spike_triplet
     layer = sp_layer + 1
 
@@ -102,7 +112,7 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
         if calc_recons[0]:
             recon[0] *= np.exp(- (spike_triplet.time - last_recon[0]) / cf.recon_tau)
             recon[0][sp_address] += recon_imp
-            last_recon[0] = sp_time - axon_delay
+            last_recon[0] = sp_time - cf.axon_delay
 
     # update neurons
     
@@ -154,7 +164,8 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
 
         # STDP weight adjustment
         if (layer % 2 == 1):
-            weights[:, newspike] += (last_spiked[layer - 1] > sp_time - cf.stdp_lag) * (wt_direction * eta)
+            #import ipdb; ipdb.set_trace() # BREAKPOINT
+            weights[:, newspike] += (last_spiked[layer - 1] > sp_time - cf.stdp_lag) * (wt_direction * cf.eta)
 
         # reconstruct the layer if desired
         if calc_recons[layer]:
@@ -165,6 +176,16 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
         # add spikes to the queue if not in the end layer
         if (layer != 3):
             # TODO amb rng.nextfloat()
-            pq.add(sp_time +  2 * axon_delay * rng_float, layer, newspike)
+            pq.put((sp_time +  2 * cf.axon_delay * np.random.random(), layer, newspike))
+    print np.sum(weights)
+
+    # Plot things
+    if not cf.plot_things:
+        return
+    display.clear_output(wait=True) 
+    show_images(weights.T[:5, :], 20, 20, 12)
+    display.display(plt.gcf())
+    time.sleep(1)
+
 
 train_network(cf, 400, 100)
