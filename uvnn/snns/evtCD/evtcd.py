@@ -18,6 +18,8 @@ Param = namedtuple('Parameters',
         ['eta', 'thresh_eta', 'numspikes', 'timespan', 'tau', 'thr',
             'inp_scale', 't_refrac', 'stdp_lag', 'min_thr', 'plot_things', 
             'axon_delay'])
+Spike = namedtuple('Spike',
+        ['time', 'layer', 'address'])
 
 cf = Param(eta=1e-3, thresh_eta=0, numspikes=100, timespan=2, tau=0.05, 
         thr=1, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
@@ -105,7 +107,7 @@ def train_network(cf, vis_size, hid_size):
         # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
         t_passed = 0
         for spike, time in spike_train_sample:
-            pq.put((time + t_passed, -1, spike))   # spike fired from '-1th' layer
+            pq.put(Spike(time=time + t_passed, layer=-1, address=spike))   # spike fired from '-1th' layer
             t_passed += cf.timespan
 
         while not pq.empty():
@@ -129,7 +131,9 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     '''
     
     #import ipdb; ipdb.set_trace() # BREAKPOINT
-    sp_time, sp_layer, sp_address = spike_triplet
+    sp_time = spike_triplet.time
+    sp_layer = spike_triplet.layer
+    sp_address = spike_triplet.address
     spike_history.append(spike_triplet)
     layer = sp_layer + 1
 
@@ -206,7 +210,8 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
             last_recon[layer] = sp_time
         
         # add spikes to the queue if not in the end layer
-        new_triplet = (sp_time +  2 * cf.axon_delay * np.random.random(), layer, newspike)
+        new_triplet = Spike(time=sp_time +  2 * cf.axon_delay * np.random.random(), 
+                layer=layer, address=newspike)
         spike_history.append(new_triplet)
         if (layer != 3):
             # TODO amb rng.nextfloat()
@@ -223,4 +228,4 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     time.sleep(1)
 
 
-#train_network(cf, 400, 100)
+train_network(cf, 400, 100)
