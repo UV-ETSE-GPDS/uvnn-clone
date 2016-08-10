@@ -7,6 +7,7 @@ from IPython import display #plotting purposes
 import matplotlib.pyplot as plt
 from uvnn.utils.images import show_images
 import time
+import myex
 #unknown things
 # stdp_lag ??
 # inp_scale ??
@@ -22,15 +23,14 @@ Spike = namedtuple('Spike',
         ['time', 'layer', 'address'])
 
 cf = Param(eta=1e-3, thresh_eta=0, numspikes=100, timespan=2, tau=0.05, 
-        thr=1, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
+        thr=3, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
         plot_things=False, axon_delay=0.0001)
 
 def img_to_spike(x, numspikes, timespan):
     ''' return pairs of spike_address, time '''
-    #import ipdb; ipdb.set_trace()
     probs = x / float(sum(x))
     spike = np.random.choice(range(len(x)), numspikes, True, probs)
-    times = np.sort(np.random.rand(len(x)) * timespan)
+    times = np.sort(np.random.rand(numspikes) * timespan)
     return zip(spike, times)
 
 def prepare_spike_trains(numspikes=100, timespan = 10):
@@ -52,27 +52,28 @@ def prepare_spike_trains(numspikes=100, timespan = 10):
     #spike_trains = np.apply_along_axis(img_to_spike, 1, X, numspikes, timespan)
     # use vectorized form later
     spike_trains = [img_to_spike(x, numspikes, timespan) for x in X]
-    
+    #import ipdb; ipdb.set_trace()
    
 
-    
-    print 'Real images'
-    ris = np.random.choice(range(X.shape[0]), 10, False)
-    show_images(X[ris], 20, 20)
-
-    print 'Converted spike trains'
-    #plt.subplot(1, 10)
-    plt_m, plt_n = 10, 1
-    plt.figure(figsize=(2 * plt_m, 2 * plt_n))
-    for i, ri in enumerate(ris):
-        spikes, _ = zip(*spike_trains[ri]) 
+    if False: 
+        # TODO move to dashboard this things later
+        print 'Real images'
+        ris = np.random.choice(range(X.shape[0]), 10, False)
+        show_images(X[ris], 20, 20)
         
-        xx, yy = zip(*map(lambda x: (x % 20, x / 20), spikes))
-        plt.subplot(1, 10, i + 1)
-        plt.xticks(np.arange(0, 20))
-        plt.yticks(np.arange(0, 20, 1))
-        plt.plot(yy, xx, 'o')
-    plt.show()
+        print 'Converted spike trains'
+        #plt.subplot(1, 10)
+        plt_m, plt_n = 10, 1
+        plt.figure(figsize=(2 * plt_m, 2 * plt_n))
+        for i, ri in enumerate(ris):
+            spikes, _ = zip(*spike_trains[ri]) 
+            
+            xx, yy = zip(*map(lambda x: (x % 20, x / 20), spikes))
+            plt.subplot(1, 10, i + 1)
+            plt.xticks(np.arange(0, 20))
+            plt.yticks(np.arange(0, 20, 1))
+            plt.plot(yy, xx, 'o')
+        plt.show()
 
     return spike_trains, y
 
@@ -100,25 +101,30 @@ def train_network(cf, vis_size, hid_size):
         last_spiked[-1].fill(-100)  # not to cause first spikes accidentally
         last_update.append(np.zeros(layer_size))
         refrac_end.append(np.zeros(layer_size))
-        thr.append(np.ones(layer_size))
+        th_single = np.zeros(layer_size)
+        th_single.fill(cf.thr)
+        thr.append(th_single)
     
+    t_passed = 0
     for spike_train_sample in spike_trains[:20]:  # first 20 spikes
+
         # spike train is a one digit encoded to pairs (spike_address, time)
         # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
-        t_passed = 0
         for spike, time in spike_train_sample:
-            pq.put(Spike(time=time + t_passed, layer=-1, address=spike))   # spike fired from '-1th' layer
-            t_passed += cf.timespan
+            # spike fired from '-1th' layer
+            pq.put(Spike(time=time + t_passed, layer=0, address=spike))               
+        t_passed += cf.timespan
 
+        last_time = -1
         while not pq.empty():
             spike_triplet = pq.get()
+            #import ipdb; ipdb.set_trace()
             process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
                     last_update, refrac_end, spike_count, calc_recons, W, spike_history)
 
     # visualize spikes
     return spike_history
 
-    
 def add_noise(membrane, layer_num):
     pass
 
@@ -153,7 +159,11 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     # update neurons
     
     #decay membrane
+
     membranes[layer] *= np.exp(-(sp_time - last_update[layer]) / cf.tau)
+    if np.any(membranes[layer] > 500):
+        import ipdb; ipdb.set_trace() # BREAKPOINT
+
 
     #add impulse
     if layer == 0:
@@ -169,12 +179,15 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     add_noise(membranes[layer], layer) 
 
     # update last_update
+
     last_update[layer] = sp_time
 
     # Add firings to queue
     newspikes = np.nonzero(membranes[layer] > thr[layer % 2])[0]
 
+    
     for newspike in newspikes:
+        #import ipdb; ipdb.set_trace() # BREAKPOINT
         # update counts
 
         spike_count[layer] += 1
@@ -210,7 +223,8 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
             last_recon[layer] = sp_time
         
         # add spikes to the queue if not in the end layer
-        new_triplet = Spike(time=sp_time +  2 * cf.axon_delay * np.random.random(), 
+        # TODO add random numb to delay
+        new_triplet = Spike(time=sp_time +  2 * cf.axon_delay, 
                 layer=layer, address=newspike)
         spike_history.append(new_triplet)
         if (layer != 3):
@@ -228,4 +242,12 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     time.sleep(1)
 
 
-train_network(cf, 400, 100)
+
+
+
+from operator import attrgetter
+spike_history = train_network(cf, 400, 100)
+spikes_sorted = sorted(spike_history, key=attrgetter('time'))
+
+dashboard = myex.DashBoard(spikes_sorted)
+dashboard.plot_thigns()
