@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from uvnn.utils.images import show_images
 import time
 import myex
+from collections import defaultdict
+from common import Param, Spike
 #unknown things
 # stdp_lag ??
 # inp_scale ??
@@ -15,12 +17,7 @@ import myex
 # min_thr ??
 # axon_delay ?? 
 
-Param = namedtuple('Parameters', 
-        ['eta', 'thresh_eta', 'numspikes', 'timespan', 'tau', 'thr',
-            'inp_scale', 't_refrac', 'stdp_lag', 'min_thr', 'plot_things', 
-            'axon_delay'])
-Spike = namedtuple('Spike',
-        ['time', 'layer', 'address'])
+
 
 cf = Param(eta=1e-3, thresh_eta=0, numspikes=100, timespan=2, tau=0.05, 
         thr=3, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
@@ -90,8 +87,23 @@ def train_network(cf, vis_size, hid_size):
     calc_recons = [False, False, False, False]
     thr = []
     W = np.random.rand(vis_size, hid_size)
-    spike_history = [] #(triplet of time, layer, address)
     
+    
+    # history keeps track of spikes/potential_change/ .. etc, it is dict
+    # with key - timestep, (rounded to cf.prec digits), and the value is the
+    # list of events which occured on this timestep (the list will
+    # have size 1 unless several spikes occured simultiniously. Each item in 
+    # list is a tuple, first item in tuple is a string - event type, others 
+    # will be event description for example in case of 'spike' other items in 
+    # the tuple will be layer and address. Tuple descriptions are below.
+    # -----------------------
+    # ('SPIKE', layer, address)
+    # ('THR', layer, address, newvalue)
+    # ('MEMBRANE', layer, layer_values)
+    history = defaultdict(list)
+
+
+
     # Data and model layers
     for layer in range(4):
         layer_size = vis_size if layer % 2 == 0 else hid_size
@@ -110,9 +122,17 @@ def train_network(cf, vis_size, hid_size):
 
         # spike train is a one digit encoded to pairs (spike_address, time)
         # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
+       
+        spike_image = np.zeros(vis_size)
         for spike, time in spike_train_sample:
             # spike fired from '-1th' layer
             pq.put(Spike(time=time + t_passed, layer=0, address=spike))               
+            spike_image[spike] += 1
+        
+        # add spike image to history, but normalize first
+        history[t_passed].append(('NEW_SPIKE_TRAIN', 
+            spike_image / np.max(spike_image)))
+
         t_passed += cf.timespan
 
         last_time = -1
@@ -120,16 +140,19 @@ def train_network(cf, vis_size, hid_size):
             spike_triplet = pq.get()
             #import ipdb; ipdb.set_trace()
             process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
-                    last_update, refrac_end, spike_count, calc_recons, W, spike_history)
+                    last_update, refrac_end, spike_count, calc_recons, W, history)
 
     # visualize spikes
-    return spike_history
+    return history
 
 def add_noise(membrane, layer_num):
     pass
 
+def log(history, time, data):
+    history[round(time, 6)].append(data)
+
 def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes, 
-        last_update, refrac_end, spike_count, calc_recons, weights, spike_history):
+        last_update, refrac_end, spike_count, calc_recons, weights, history):
     ''' Params:
             spike triplet - has a form of (time, layer, address) 
             cf - configs
@@ -140,7 +163,7 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     sp_time = spike_triplet.time
     sp_layer = spike_triplet.layer
     sp_address = spike_triplet.address
-    spike_history.append(spike_triplet)
+    log(history, sp_time, ('SPIKE', sp_layer, sp_address))
     layer = sp_layer + 1
 
     # Reconstruct the imaginary first-layer action that resulted in this spike
@@ -177,6 +200,8 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
 
     # add noise
     add_noise(membranes[layer], layer) 
+    
+    log(history, sp_time, ('MEMBRANE', layer, membranes[layer] / thr[layer%2]))
 
     # update last_update
 
@@ -223,10 +248,11 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
             last_recon[layer] = sp_time
         
         # add spikes to the queue if not in the end layer
-        # TODO add random numb to delay
-        new_triplet = Spike(time=sp_time +  2 * cf.axon_delay, 
-                layer=layer, address=newspike)
-        spike_history.append(new_triplet)
+        # also add  random delay 
+        rand_delay = np.random.random() / 10000
+        new_time = sp_time +  2 * cf.axon_delay + rand_delay
+        new_triplet = Spike(time= new_time, layer=layer, address=newspike)
+        log(history, new_time, ('SPIKE', layer, newspike))
         if (layer != 3):
             # TODO amb rng.nextfloat()
             pq.put(new_triplet)
@@ -242,12 +268,6 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     time.sleep(1)
 
 
-
-
-
-from operator import attrgetter
-spike_history = train_network(cf, 400, 100)
-spikes_sorted = sorted(spike_history, key=attrgetter('time'))
-
-dashboard = myex.DashBoard(spikes_sorted)
+history = train_network(cf, 400, 100)
+dashboard = myex.DashBoard(sorted(history.items()))
 dashboard.plot_thigns()
