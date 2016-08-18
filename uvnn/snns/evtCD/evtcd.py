@@ -19,8 +19,8 @@ from common import Param, Spike
 
 
 
-cf = Param(eta=1e-3, thresh_eta=0, numspikes=100, timespan=2, tau=0.05, 
-        thr=3, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
+cf = Param(eta=1e-1, thresh_eta=0, numspikes=100, timespan=2, tau=0.05, 
+        thr=2, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
         plot_things=False, axon_delay=0.0001)
 
 def img_to_spike(x, numspikes, timespan):
@@ -102,7 +102,7 @@ def train_network(cf, vis_size, hid_size):
     # ('MEMBRANE', layer, layer_values)
     history = defaultdict(list)
 
-
+    log(history, 0, ('INIT_WEIGHTS', W))
 
     # Data and model layers
     for layer in range(4):
@@ -118,7 +118,7 @@ def train_network(cf, vis_size, hid_size):
         thr.append(th_single)
     
     t_passed = 0
-    for spike_train_sample in spike_trains[:20]:  # first 20 spikes
+    for spike_train_sample in spike_trains[:200]:  # first 20 spikes
 
         # spike train is a one digit encoded to pairs (spike_address, time)
         # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
@@ -232,14 +232,22 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
         wt_direction = 1 if layer < 2 else -1
         thr[layer % 2][newspike] += thr_direction * cf.eta * cf.thresh_eta
 
-        # TODO ambigious
         thr[layer % 2][thr[layer%2] < cf.min_thr] = cf.min_thr
 
 
         # STDP weight adjustment
         if (layer % 2 == 1):
+            #import ipdb; ipdb.set_trace()
+            weight_adj = (last_spiked[layer - 1] > (sp_time - cf.stdp_lag)) * (wt_direction * cf.eta)
             #import ipdb; ipdb.set_trace() # BREAKPOINT
-            weights[:, newspike] += (last_spiked[layer - 1] > sp_time - cf.stdp_lag) * (wt_direction * cf.eta)
+            weights[:, newspike] += weight_adj
+            # log weight update
+
+            #log(history, sp_time, ('UPDATE_WEIGHTS', newspike, np.random.random(weights.shape[0])))
+            if np.any(weight_adj):
+                weights_to_log = np.copy(weights[:, newspike])
+                log(history, sp_time, ('UPDATE_WEIGHTS', newspike, weights_to_log))
+            #print np.max(weight_adj) ,np.min(weight_adj)
 
         # reconstruct the layer if desired
         if calc_recons[layer]:
@@ -267,7 +275,8 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     display.display(plt.gcf())
     time.sleep(1)
 
-
-history = train_network(cf, 400, 100)
-dashboard = myex.DashBoard(sorted(history.items()))
+visible_size = 400
+hidden_size = 4
+history = train_network(cf, visible_size, hidden_size)
+dashboard = myex.DashBoard(sorted(history.items()), visible_size, hidden_size)
 dashboard.plot_thigns()
