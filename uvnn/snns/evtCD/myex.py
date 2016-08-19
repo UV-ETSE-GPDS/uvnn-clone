@@ -6,24 +6,81 @@ import numpy as np
 import pyqtgraph as pg
 import collections
 import time
-from common import Spike
+from common import Spike, normalize
+import matplotlib.pyplot as plt
 
 class DashBoard(object):
     def __init__(self, history, visible_size, hidden_size):
         # history is an array of (time, data) see history definition in evtcd.py
-        self.w_row = 2   # weights are shown in 10 x 10 grid on picture
-        self.w_col = 2   # NOTE TODO(refactor) change it if you change dims 
+        self.w_row = 4   # weights are shown in 10 x 10 grid on picture
+        self.w_col = 4   # NOTE TODO(refactor) change it if you change dims 
         
         self.history = history
         self.visible_size = visible_size
         self.hidden_size = hidden_size
         img_sz_vis = (20, 20)
-        img_sz_hid = (2, 2)
+        img_sz_hid = (4, 4)
         self.layer_sizes = [img_sz_vis, img_sz_hid, img_sz_vis, img_sz_hid]
         self.show_lastn_spike = 100
         self.last_spikes = [collections.deque(
             maxlen=self.show_lastn_spike) for _ in range(5)]
         self.ind = 0 # index in the history array
+    
+
+    def plot_reconstr_accuracy(self):
+        #import ipdb; ipdb.set_trace()
+        cur_img = None  # true distribution of spike train
+        recon_img = None# distribution of spikes in reconstraciton layer
+        accuracies = []
+        min_weights = []
+        max_weights = []
+        min_weight = 1000
+        max_weight = -1000
+        for time, events in self.history:
+            for event in events: 
+                evt_type = event[0]
+                if evt_type == 'NEW_SPIKE_TRAIN':
+                    if not cur_img is None:
+                        # normalize probabilities
+                        recon_img = recon_img / float(np.sum(recon_img))
+                        cur_img = cur_img / float(np.sum(cur_img))
+                        # calculate difference between two distributions
+                        # here we just use MSE
+                        #import ipdb; ipdb.set_trace()
+                        diff = np.sum((cur_img - recon_img) ** 2) / len(cur_img)
+                        accuracies.append(diff)
+
+                        # save min max weights as well
+                        min_weights.append(min_weight)
+                        max_weights.append(max_weight)
+                        min_weight = 1000
+                        max_weight = -1000
+                    cur_img = event[1]
+                    recon_img = np.zeros_like(cur_img)
+                elif evt_type == 'SPIKE':
+                    layer, address = event[1], event[2]
+                    if layer == 2:
+                        # reconstruction
+                        recon_img[address] += 1
+                elif evt_type == 'UPDATE_WEIGHTS':
+                    weights = event[2]
+                    min_weight = np.min(weights)
+                    max_weight = np.max(weights)
+
+        #print accuracies 
+        fig = plt.figure(figsize=(20, 10))
+        ax1 = fig.add_subplot(221)
+        ax1.plot(accuracies)
+        ax1.set_title('accuracy over examples')
+        ax2 = fig.add_subplot(222)
+        ax2.plot(min_weights)
+        ax2.set_title('min_weights')
+        ax3 = fig.add_subplot(223)
+        ax3.plot(max_weights)
+        ax3.set_title('max_weights')
+        plt.tight_layout()
+        plt.show()
+        
 
     def plot_thigns(self):
         app = QtGui.QApplication([])
@@ -164,8 +221,7 @@ class DashBoard(object):
         #print np.max(delta), np.min(delta)
         self.weights_data[:, column] = new_vals
         x =self.weights_data[:, column].reshape(self.layer_sizes[0]) 
-        normalized = x
-        normalized = (x-np.min(x))/(np.max(x)-np.min(x)) 
+        normalized = normalize(x) # normalize between 0, 1
         #print 'changed!'
         #if column == 2:
         #    print normalized
@@ -189,6 +245,7 @@ class DashBoard(object):
 
 
         self.weight_imgs[column].setImage(self.weights_imgs_data)
+        #self.weight_imgs[column].setImage(normalized)
     
     def update_spike_plot(self, triplet):
         trip_layer = triplet.layer # original layers were(-1, 0, 1, 2, 3)
@@ -251,9 +308,9 @@ class DashBoard(object):
 
 
         self.ind += 1
-        relative_sim = False # relative time simulation
+        relative_sim = True # relative time simulation
         if relative_sim:
-            delay = 100 * (cur_time - self.last_upd_time)
+            delay = 10 * (cur_time - self.last_upd_time)
         else:
             delay = 10
 

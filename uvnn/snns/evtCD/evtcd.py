@@ -10,6 +10,8 @@ import time
 import myex
 from collections import defaultdict
 from common import Param, Spike
+import sys
+import argparse
 #unknown things
 # stdp_lag ??
 # inp_scale ??
@@ -17,11 +19,9 @@ from common import Param, Spike
 # min_thr ??
 # axon_delay ?? 
 
-
-
-cf = Param(eta=1e-1, thresh_eta=0, numspikes=100, timespan=2, tau=0.05, 
-        thr=2, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.002, min_thr=-1,
-        plot_things=False, axon_delay=0.0001)
+cf = Param(eta=0.01, thresh_eta=0, numspikes=500, timespan=0.1, tau=0.005, 
+        thr=1, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.006, min_thr=-1,
+        plot_things=False, axon_delay=0.0001, t_gap = 4)
 
 def img_to_spike(x, numspikes, timespan):
     ''' return pairs of spike_address, time '''
@@ -44,6 +44,13 @@ def prepare_spike_trains(numspikes=100, timespan = 10):
     X = (X - np.min(X)) / float(np.max(X) - np.min(X))
     # remove low valued pixels (truncated mnist problem)
     X[X < 0.12] = 0
+    
+    reshuffle = True # weather or not reshuffle array
+    if reshuffle:
+        order = np.array(range(X.shape[0]))
+        np.random.shuffle(order)
+        X = X[order]
+    #import ipdb; ipdb.set_trace()
     #X -= np.min(X)
     #import ipdb; ipdb.set_trace()
     #spike_trains = np.apply_along_axis(img_to_spike, 1, X, numspikes, timespan)
@@ -75,7 +82,7 @@ def prepare_spike_trains(numspikes=100, timespan = 10):
     return spike_trains, y
 
 
-def train_network(cf, vis_size, hid_size):
+def train_network(cf, vis_size, hid_size, num_samples):
     pq = PriorityQueue()
     spike_trains, labels = prepare_spike_trains(cf.numspikes, cf.timespan)
     
@@ -118,7 +125,7 @@ def train_network(cf, vis_size, hid_size):
         thr.append(th_single)
     
     t_passed = 0
-    for spike_train_sample in spike_trains[:200]:  # first 20 spikes
+    for spike_train_sample in spike_trains[:num_samples]:
 
         # spike train is a one digit encoded to pairs (spike_address, time)
         # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
@@ -133,7 +140,7 @@ def train_network(cf, vis_size, hid_size):
         history[t_passed].append(('NEW_SPIKE_TRAIN', 
             spike_image / np.max(spike_image)))
 
-        t_passed += cf.timespan
+        t_passed = t_passed + cf.timespan + cf.t_gap
 
         last_time = -1
         while not pq.empty():
@@ -257,8 +264,8 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
         
         # add spikes to the queue if not in the end layer
         # also add  random delay 
-        rand_delay = np.random.random() / 10000
-        new_time = sp_time +  2 * cf.axon_delay + rand_delay
+        rand_delay = np.random.random() * cf.axon_delay * 2
+        new_time = sp_time + cf.axon_delay + rand_delay
         new_triplet = Spike(time= new_time, layer=layer, address=newspike)
         log(history, new_time, ('SPIKE', layer, newspike))
         if (layer != 3):
@@ -275,8 +282,16 @@ def process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
     display.display(plt.gcf())
     time.sleep(1)
 
-visible_size = 400
-hidden_size = 4
-history = train_network(cf, visible_size, hidden_size)
-dashboard = myex.DashBoard(sorted(history.items()), visible_size, hidden_size)
-dashboard.plot_thigns()
+if __name__ == '__main__':
+    
+    visible_size = 400
+    hidden_size = 16
+    num_samples = 300 # num of images to show to the netowrk
+    history = train_network(cf, visible_size, hidden_size, num_samples)
+    np.random.seed(0)
+    dashboard = myex.DashBoard(sorted(history.items()), visible_size, hidden_size)
+    if sys.argv[1] == '--train':
+        dashboard.plot_reconstr_accuracy()
+    elif sys.argv[1] == '--simulate':
+        dashboard.plot_reconstr_accuracy()
+        dashboard.plot_thigns()
