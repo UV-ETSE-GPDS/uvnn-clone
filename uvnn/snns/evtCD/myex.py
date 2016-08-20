@@ -18,7 +18,7 @@ class DashBoard(object):
         self.history = history
         self.visible_size = visible_size
         self.hidden_size = hidden_size
-        img_sz_vis = (20, 20)
+        img_sz_vis = (28, 28)
         img_sz_hid = (4, 4)
         self.layer_sizes = [img_sz_vis, img_sz_hid, img_sz_vis, img_sz_hid]
         self.show_lastn_spike = 100
@@ -207,8 +207,9 @@ class DashBoard(object):
         self.membr_imgs[layer].setImage(self.membr_datas[layer])
 
     def update_train_plot(self, vals):
+        ''' Plot for Input train image '''
         layer_sz = self.layer_sizes[0]
-        self.input_train_img.setImage(vals.reshape(layer_sz))
+        self.input_train_img.setImage(vals.reshape(layer_sz ))
 
     def update_weights_plot(self, column, new_vals):
         delta = new_vals - self.weights_data[:, column]
@@ -225,7 +226,7 @@ class DashBoard(object):
         #print 'changed!'
         #if column == 2:
         #    print normalized
-        self.weights_imgs_data = np.zeros((20, 20, 3))
+        self.weights_imgs_data = np.zeros((28, 28, 3))
         self.weights_imgs_data[:,:,0] = normalized
         self.weights_imgs_data[:,:,1] = normalized
         self.weights_imgs_data[:,:,2] = normalized
