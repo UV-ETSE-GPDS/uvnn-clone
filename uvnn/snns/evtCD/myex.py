@@ -203,17 +203,24 @@ class DashBoard(object):
             QtGui.QApplication.instance().exec_()
 
     def update_membrane_plot(self, layer, layer_vals):
-        self.membr_datas[layer] = layer_vals.reshape(self.layer_sizes[layer])
+        img = self.as_image(layer_vals, layer)
+        self.membr_datas[layer] = img
         self.membr_imgs[layer].setImage(self.membr_datas[layer])
+
+    def as_image(self, vals, layer):
+        ''' converts vector vals to 2D image for visualisation '''
+        sz = self.layer_sizes[layer]
+        return vals.reshape(sz)
 
     def update_train_plot(self, vals):
         ''' Plot for Input train image '''
-        layer_sz = self.layer_sizes[0]
-        self.input_train_img.setImage(vals.reshape(layer_sz ))
+        img = self.as_image(vals, 0)
+        img[2, 15] = 1
+        self.input_train_img.setImage(img)
 
     def update_weights_plot(self, column, new_vals):
         delta = new_vals - self.weights_data[:, column]
-        delta = delta.reshape(self.layer_sizes[0])
+        delta = self.as_image(delta, 0)
         if not np.any(delta):
             return
         # if positive increased, if negative decreased
@@ -221,7 +228,7 @@ class DashBoard(object):
         #import ipdb; ipdb.set_trace()
         #print np.max(delta), np.min(delta)
         self.weights_data[:, column] = new_vals
-        x =self.weights_data[:, column].reshape(self.layer_sizes[0]) 
+        x = self.as_image(self.weights_data[:, column], 0)
         normalized = normalize(x) # normalize between 0, 1
         #print 'changed!'
         #if column == 2:
@@ -321,8 +328,8 @@ class DashBoard(object):
             
     def getxy(self, address, layer):
         # convert 1d neuron coordinate to 2d
-        return (address / self.layer_sizes[layer][0], 
-                address % self.layer_sizes[layer][1])
+        return (address % self.layer_sizes[layer][0], 
+                address / self.layer_sizes[layer][1])
 
 #db = DashBoard(1)
 #db.plot_thigns()

@@ -20,10 +20,10 @@ from common import Param, Spike, str2bool
 parser = argparse.ArgumentParser(description='evtcd algorithm with simulation')
 
 # Algorithm params
-parser.add_argument("--eta", type=float, default=0.01, help="Learning rate")
+parser.add_argument("--eta", type=float, default=0.005, help="Learning rate")
 parser.add_argument("--thresh_eta", type=float, default=0, 
         help="Threshold learning rate")
-parser.add_argument("--numspikes", type=int, default=500, 
+parser.add_argument("--numspikes", type=int, default=2000, 
         help="Number of spikes for one input sample during [timespan] seconds")
 parser.add_argument("--timespan", type=float, default=0.1, 
         help="durition in which [numspikes] of one sample digit happen")
@@ -81,8 +81,12 @@ class SRBM(object):
         # y might be None as the algorithm is unsupervised 
         if args.input_file is None: 
             # by default we take kaggle 28x28 dataset
-            csv_reader = CsvReader(fn='../../input/kaggle_mnist/dev/train.csv',
-                    has_header=True, label_pos=0)
+            if args.num_samples > 10: #TODO remove later not needed
+                csv_reader = CsvReader(fn='../../input/kaggle_mnist/train.csv',
+                        has_header=True, label_pos=0)
+            else:
+                csv_reader = CsvReader(fn='../../input/kaggle_mnist/dev/train.csv',
+                        has_header=True, label_pos=0)
             self.X, self.y = csv_reader.load_data()
         else:
             csv_reader = CsvReader(fn=args.input_file, has_header=False)
@@ -106,28 +110,28 @@ class SRBM(object):
         #X, y = csv_reader.load_data()
         X, y = self.X, self.y
         # normalize data
-        X = (X - np.min(X)) / float(np.max(X) - np.min(X))
+        self.X = (self.X - np.min(self.X)) / float(np.max(self.X) - np.min(self.X))
         # remove low valued pixels (truncated mnist problem)
         #X[X < 0.12] = 0
         
         reshuffle = True # weather or not reshuffle array
         if reshuffle:
-            order = np.array(range(X.shape[0]))
+            order = np.array(range(self.X.shape[0]))
             np.random.shuffle(order)
-            X = X[order]
+            self.X = self.X[order]
         #import ipdb; ipdb.set_trace()
         #X -= np.min(X)
         #import ipdb; ipdb.set_trace()
         #spike_trains = np.apply_along_axis(img_to_spike, 1, X, numspikes, timespan)
         # use vectorized form later
-        spike_trains = [self.data_to_spike(x, numspikes, timespan) for x in X]
+        #spike_trains = [self.data_to_spike(x, numspikes, timespan) for x in X]
 
-        return spike_trains, y
+        #return spike_trains, y
 
 
     def train_network(self, cf, vis_size, hid_size, num_samples):
         pq = PriorityQueue()
-        spike_trains, labels = self.prepare_spike_trains(cf.numspikes, cf.timespan)
+        #spike_trains, labels = self.prepare_spike_trains(cf.numspikes, cf.timespan)
         
         membranes = []
         last_spiked = []
@@ -168,8 +172,8 @@ class SRBM(object):
             thr.append(th_single)
         
         t_passed = 0
-        for spike_train_sample in spike_trains[:num_samples]:
-
+        for x in self.X[:num_samples]:
+            spike_train_sample = self.data_to_spike(x, cf.numspikes, cf.timespan)
             # spike train is a one digit encoded to pairs (spike_address, time)
             # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
         
