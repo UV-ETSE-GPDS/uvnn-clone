@@ -111,5 +111,6 @@ Now trained weights are saved in myweights.npy, if we want to visualise running 
 
  
 
+<img src="https://s9.postimg.org/af6uwbapb/Screen_Shot_2016_08_22_at_4_53_20_AM.png" alt="alt text" width="900" height="whatever">
 
 
