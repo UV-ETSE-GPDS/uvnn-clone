@@ -67,8 +67,8 @@ parser.add_argument("--simulate", type=str2bool, default=True,
 parser.add_argument("--shuffle", type=str2bool, default=True, 
         help="Whether or not should shuffle data set before training")
 
-parser.add_argument("--batch_size", type=int, default=10, 
-        help="Whether or not should shuffle data set before training")
+parser.add_argument("--batch_size", type=int, default=None, 
+        help="Batch size of training samples")
 
 parser.add_argument("--test_every", type=int, default=None, 
         help="In every how many sample, benchmarking on test set should occur")
@@ -223,6 +223,7 @@ class SRBM(object):
 
         vis_size = cf.visible_size
         hid_size = cf.hidden_size
+
         
         if init_weights is None:
             # check whether it should be loaded
@@ -235,6 +236,8 @@ class SRBM(object):
             W = init_weights
         
         
+        batch_W_delta = np.zeros((vis_size, hid_size)) # used for batch updates
+
         # history keeps track of spikes/potential_change/ .. etc, it is dict
         # with key - timestep, (rounded to cf.prec digits), and the value is the
         # list of events which occured on this timestep (the list will
@@ -267,10 +270,15 @@ class SRBM(object):
         self.errors = []   # errors on test set
         for (sample_num, x) in enumerate(self.X_train):
             
+            if cf.batch_size is not None and sample_num != 0 and sample_num % cf.batch_size == 0:
+                # perform batch update
+                W += batch_W_delta / cf.batch_size
+                batch_W_delta.fill(0)
 
             if cf.test_every is not None and sample_num % cf.test_every == 0:
-                # run current network on test set for training graph
-                self.errors.append(self.error_on_test(W))
+                # run current network on test set for training curve
+                if sample_num != 0:
+                    self.errors.append(self.error_on_test(W))
 
 
             spike_train_sample = self.data_to_spike(x, cf.numspikes, cf.timespan)
@@ -301,7 +309,7 @@ class SRBM(object):
                 #import ipdb; ipdb.set_trace()
                 self.process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
                         last_update, refrac_end, spike_count, calc_recons, W, history, 
-                        recon_distr)
+                        recon_distr, batch_W_delta)
             
             if cf.log_reconstr:
                 history[t_passed].append(('RECON_DISTR', 
@@ -332,7 +340,7 @@ class SRBM(object):
 
     def process_spike(self, spike_triplet, cf, pq, thr, last_spiked, membranes, 
             last_update, refrac_end, spike_count, calc_recons, weights, history,
-            recon_distr):
+            recon_distr, batch_weight_delta):
         ''' Params:
                 spike triplet - has a form of (time, layer, address) 
                 cf - configs
@@ -425,7 +433,13 @@ class SRBM(object):
                 weight_adj = (last_spiked[layer - 1] > (sp_time - cf.stdp_lag)) * (wt_direction * cf.eta)
 
                 if cf.enable_update:
-                    weights[:, newspike] += weight_adj
+                    # check if batch training is on
+                    if cf.batch_size is None:
+                        # if its turned off update immediately
+                        weights[:, newspike] += weight_adj
+                    else:
+                        # else save update for later
+                        batch_weight_delta[:, newspike] += weight_adj
 
                 if cf.simulate and cf.show_weight_deltas and np.any(weight_adj):
                     # log weight update
@@ -453,7 +467,7 @@ class SRBM(object):
 
 
 if __name__ == '__main__':
-    np.random.seed(0)           # to rerun same experiments
+    np.random.seed(2)           # to rerun same experiments
     args = parser.parse_args()  # get algorithm arguments from cmd
     srbm = SRBM(args) # create and initialize spiking rbm network
     srbm.load_data()

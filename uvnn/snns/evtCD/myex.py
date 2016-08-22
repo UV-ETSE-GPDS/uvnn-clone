@@ -25,7 +25,7 @@ class DashBoard(object):
         img_sz_vis = (vis_side, vis_side)
         img_sz_hid = (hid_side, hid_side)
         self.layer_sizes = [img_sz_vis, img_sz_hid, img_sz_vis, img_sz_hid]
-        self.show_lastn_spike = 200
+        self.show_lastn_spike = 400
         self.last_spikes = [collections.deque(
             maxlen=self.show_lastn_spike) for _ in range(5)]
         self.ind = 0 # index in the history array
