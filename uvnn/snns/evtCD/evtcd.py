@@ -1,4 +1,5 @@
 import time
+import copy
 import sys
 import argparse
 import numpy as np
@@ -11,6 +12,7 @@ from uvnn.utils.images import show_images
 from collections import defaultdict
 from common import Param, Spike, str2bool
 
+
 #unknown things
 # stdp_lag ??
 # inp_scale ??
@@ -20,7 +22,7 @@ from common import Param, Spike, str2bool
 parser = argparse.ArgumentParser(description='evtcd algorithm with simulation')
 
 # Algorithm params
-parser.add_argument("--eta", type=float, default=0.005, help="Learning rate")
+parser.add_argument("--eta", type=float, default=0.001, help="Learning rate")
 parser.add_argument("--thresh_eta", type=float, default=0, 
         help="Threshold learning rate")
 parser.add_argument("--numspikes", type=int, default=2000, 
@@ -32,18 +34,18 @@ parser.add_argument("--tau", type=float, default=0.005,
 parser.add_argument("--thr", type=float, default=1, help="Threshold value")
 parser.add_argument("--inp_scale", type=float, default=0.1, 
         help="value to use for the first layer membrane potential addition (Doesn't matter much)")
-parser.add_argument("--t_refrac", type=float, default=0.001, 
+parser.add_argument("--t_refrac", type=float, default=0.005, 
         help="Refractory period")
-parser.add_argument("--stdp_lag", type=float, default=0.006, 
+parser.add_argument("--stdp_lag", type=float, default=0.003, 
         help="STDP window length")
 parser.add_argument("--min_thr", type=float, default=-1, 
         help="minimum threshold")
 parser.add_argument("--axon_delay", type=float, default=0.0001, 
         help="axon delay, how long the spike takes to travel to the next layer")
-parser.add_argument("--t_gap", type=float, default=4, 
+parser.add_argument("--t_gap", type=float, default=10, 
         help="time gap between different training samples")
 
-# Network params
+# Network param s
 parser.add_argument("--visible_size", type=int, default=784, 
         help="number of neurons in the visible layer")
 parser.add_argument("--hidden_size", type=int, default=16, 
@@ -53,18 +55,43 @@ parser.add_argument("--hidden_size", type=int, default=16,
 parser.add_argument("--input_file", default=None) 
 # by default kaggle set is used
 
-parser.add_argument("--num_samples", type=int, default=10, 
-        help="number of samples to use for the training")
+parser.add_argument("--num_train", type=int, default=8, 
+        help="number of samples to use for training")
+
+parser.add_argument("--num_test", type=int, default=2, 
+        help="number of samples to use for testing")
 
 parser.add_argument("--simulate", type=str2bool, default=True, 
-        help="simulation of training with visualisation (teakes longer time)")
+        help="simulation of training with visualisation (takes longer time)")
 
+parser.add_argument("--shuffle", type=str2bool, default=True, 
+        help="Whether or not should shuffle data set before training")
 
+parser.add_argument("--batch_size", type=int, default=10, 
+        help="Whether or not should shuffle data set before training")
 
+parser.add_argument("--test_every", type=int, default=None, 
+        help="In every how many sample, benchmarking on test set should occur")
 
-cf = Param(eta=0.01, thresh_eta=0, numspikes=500, timespan=0.1, tau=0.005, 
-        thr=1, inp_scale=0.1, t_refrac=0.001, stdp_lag=0.006, min_thr=-1,
-        plot_things=False, axon_delay=0.0001, t_gap = 4)
+parser.add_argument("--enable_update", type=str2bool, default=True, 
+        help="determines whether weights are updated, useful when you already have learned weights")
+
+parser.add_argument("--save_weights", default='temp.npy', 
+        help="Path to save weights")
+
+parser.add_argument("--load_weights", default=None, 
+        help="Path to save weights")
+
+# Logs, plots
+
+parser.add_argument("--log_reconstr", type=str2bool, default=False, 
+        help="logs reconstruction distributions for each sample")
+
+parser.add_argument("--plot_curve", type=str2bool, default=False, 
+        help="Plot training errors")
+
+parser.add_argument("--show_weight_deltas", type=str2bool, default=False, 
+        help="should only be used with simulate =True, visualizes weight updates")
 
 arguments = parser.parse_args()
 
@@ -81,7 +108,7 @@ class SRBM(object):
         # y might be None as the algorithm is unsupervised 
         if args.input_file is None: 
             # by default we take kaggle 28x28 dataset
-            if args.num_samples > 10: #TODO remove later not needed
+            if args.num_train > 10: #TODO remove later not needed
                 csv_reader = CsvReader(fn='../../input/kaggle_mnist/train.csv',
                         has_header=True, label_pos=0)
             else:
@@ -91,6 +118,12 @@ class SRBM(object):
         else:
             csv_reader = CsvReader(fn=args.input_file, has_header=False)
             self.X, self.y = csv_reader.load_data()
+        print 'Loaded', self.X.shape
+
+    def set_data(self, X, y=None):
+        ''' Alternative way to set input data ''' 
+        self.X = X
+        self.y = y
 
 
     def data_to_spike(self, x, numspikes, timespan):
@@ -100,7 +133,7 @@ class SRBM(object):
         times = np.sort(np.random.rand(numspikes) * timespan)
         return zip(spikes, times)
 
-    def prepare_spike_trains(self, numspikes=100, timespan = 10):
+    def prepare_dataset(self):
         # Load mnist and convert them to spikes
         
         # trunc mnist for testing 
@@ -108,30 +141,77 @@ class SRBM(object):
         #        has_header=False, fn_labels='../../input/trunc_mnist/trunc_mnist20x20_targets.csv') #mnist 28
 
         #X, y = csv_reader.load_data()
-        X, y = self.X, self.y
         # normalize data
+        #import ipdb; ipdb.set_trace()
         self.X = (self.X - np.min(self.X)) / float(np.max(self.X) - np.min(self.X))
-        # remove low valued pixels (truncated mnist problem)
-        #X[X < 0.12] = 0
         
-        reshuffle = True # weather or not reshuffle array
-        if reshuffle:
+        if self.args.shuffle:
             order = np.array(range(self.X.shape[0]))
             np.random.shuffle(order)
             self.X = self.X[order]
+
+
+        num_test = self.args.num_test
+        num_train = self.args.num_train
+        # put away some part for testing purposes if desired
+        self.X_test = self.X[:num_test]
+        self.X_train = self.X[num_test: num_test + num_train]
+
+    def error_on_test(self, W):
+        ''' Return some kind of error on test data for weights W,
+            For now it will be the average L2 norm of distribution difference 
+            between true spike and network spike distributions
+        '''
+        new_args = copy.copy(self.args)
+        new_args.log_reconstr = True
+
+        new_args.num_train = len(self.X_test)   # our test is the train for new network
+        new_args.num_test = 0
+        new_args.enable_update = False
+        new_args.simulate = False
+        new_args.plot_curve = False
+        new_args.test_every = None
+         
+        srbm = SRBM(new_args) # create new network
         #import ipdb; ipdb.set_trace()
-        #X -= np.min(X)
-        #import ipdb; ipdb.set_trace()
-        #spike_trains = np.apply_along_axis(img_to_spike, 1, X, numspikes, timespan)
-        # use vectorized form later
-        #spike_trains = [self.data_to_spike(x, numspikes, timespan) for x in X]
+        srbm.set_data(self.X_test)
+        history, _ = srbm.run_network(init_weights = np.copy(W))
 
-        #return spike_trains, y
+        # extract all reconstr distributions
+        
+        recon_distributions  = []
+        real_distributions = []
+        num_test = len(self.X_test)
+        for time, events in sorted(history.items()):
+            for event in events:
+                if event[0] == 'RECON_DISTR':
+                    distr = event[1]
+                    recon_distributions.append(distr)
+                elif event[0] == 'NEW_SPIKE_TRAIN':
+                    distr = event[1]
+                    real_distributions.append(distr)
 
+        assert len(recon_distributions) == len(real_distributions) == num_test
+        
+        errors = []
+        for real, recon in zip(real_distributions, recon_distributions):
+            # calculate difference
+            diff = np.sum((real - recon) ** 2) / len(real)
+            errors.append(diff)
+        
+        # return average error on all tests
+        avg_err = sum(errors) / float(num_test)
+        print 'Testing.. average error is', avg_err
+        return avg_err
 
-    def train_network(self, cf, vis_size, hid_size, num_samples):
+    def run_network(self, init_weights=None):
         pq = PriorityQueue()
-        #spike_trains, labels = self.prepare_spike_trains(cf.numspikes, cf.timespan)
+        
+        ''' keep_recon_distr : keeps a list of reconstructed distributions for
+        each training sample '''
+
+        self.prepare_dataset()
+        cf = self.args # configurations 
         
         membranes = []
         last_spiked = []
@@ -140,7 +220,19 @@ class SRBM(object):
         spike_count = [0, 0, 0, 0]
         calc_recons = [False, False, False, False]
         thr = []
-        W = np.random.rand(vis_size, hid_size)
+
+        vis_size = cf.visible_size
+        hid_size = cf.hidden_size
+        
+        if init_weights is None:
+            # check whether it should be loaded
+            if cf.load_weights is not None:
+                W = np.load(cf.load_weights)
+            else:
+                # fall back to random init
+                W = np.random.rand(vis_size, hid_size)
+        else:
+            W = init_weights
         
         
         # history keeps track of spikes/potential_change/ .. etc, it is dict
@@ -172,7 +264,15 @@ class SRBM(object):
             thr.append(th_single)
         
         t_passed = 0
-        for x in self.X[:num_samples]:
+        self.errors = []   # errors on test set
+        for (sample_num, x) in enumerate(self.X_train):
+            
+
+            if cf.test_every is not None and sample_num % cf.test_every == 0:
+                # run current network on test set for training graph
+                self.errors.append(self.error_on_test(W))
+
+
             spike_train_sample = self.data_to_spike(x, cf.numspikes, cf.timespan)
             # spike train is a one digit encoded to pairs (spike_address, time)
             # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
@@ -184,20 +284,45 @@ class SRBM(object):
                 spike_image[spike] += 1
             
             # add spike image to history, but normalize first
-            history[t_passed].append(('NEW_SPIKE_TRAIN', 
-                spike_image / np.max(spike_image)))
+            if cf.simulate or cf.log_reconstr:
+                history[t_passed].append(('NEW_SPIKE_TRAIN', 
+                    spike_image / float(np.max(spike_image))))
 
             t_passed = t_passed + cf.timespan + cf.t_gap
 
             last_time = -1
+            
+            #reconstraction spike distribution for each sample, 
+            # needed for benchmarking
+            recon_distr = np.zeros(vis_size)      
+
             while not pq.empty():
                 spike_triplet = pq.get()
                 #import ipdb; ipdb.set_trace()
                 self.process_spike(spike_triplet, cf, pq, thr, last_spiked, membranes,
-                        last_update, refrac_end, spike_count, calc_recons, W, history)
+                        last_update, refrac_end, spike_count, calc_recons, W, history, 
+                        recon_distr)
+            
+            if cf.log_reconstr:
+                history[t_passed].append(('RECON_DISTR', 
+                    recon_distr / float(np.max(recon_distr))))
 
-        # visualize spikes
-        return history
+            
+            
+            if cf.simulate:
+                # log weight update
+                for hidd in range(hid_size):
+                    weights_to_log = np.copy(W[:, hidd])
+                    self.log(history, t_passed, ('UPDATE_WEIGHTS', hidd, 
+                        weights_to_log, False))
+        
+
+        # plot errors 
+        if cf.plot_curve:
+            plt.plot(self.errors)
+            plt.show()
+
+        return history, W
 
     def add_noise(self, membrane, layer_num):
         pass
@@ -206,7 +331,8 @@ class SRBM(object):
         history[round(time, 6)].append(data)
 
     def process_spike(self, spike_triplet, cf, pq, thr, last_spiked, membranes, 
-            last_update, refrac_end, spike_count, calc_recons, weights, history):
+            last_update, refrac_end, spike_count, calc_recons, weights, history,
+            recon_distr):
         ''' Params:
                 spike triplet - has a form of (time, layer, address) 
                 cf - configs
@@ -217,7 +343,8 @@ class SRBM(object):
         sp_time = spike_triplet.time
         sp_layer = spike_triplet.layer
         sp_address = spike_triplet.address
-        self.log(history, sp_time, ('SPIKE', sp_layer, sp_address))
+        if cf.simulate:
+            self.log(history, sp_time, ('SPIKE', sp_layer, sp_address))
         layer = sp_layer + 1
 
         # Reconstruct the imaginary first-layer action that resulted in this spike
@@ -244,7 +371,6 @@ class SRBM(object):
 
         #add impulse
         if layer == 0:
-            # inp scale param not shown in thesis
             membranes[layer][sp_address] += cf.inp_scale
         elif layer % 2 == 0:
             membranes[layer] += weights[:, sp_address] * (refrac_end[layer] < sp_time)
@@ -254,8 +380,9 @@ class SRBM(object):
 
         # add noise
         self.add_noise(membranes[layer], layer) 
-        
-        self.log(history, sp_time, ('MEMBRANE', layer, membranes[layer] / thr[layer%2]))
+       
+        if cf.simulate:
+            self.log(history, sp_time, ('MEMBRANE', layer, membranes[layer] / thr[layer%2]))
 
         # update last_update
 
@@ -263,7 +390,10 @@ class SRBM(object):
 
         # Add firings to queue
         newspikes = np.nonzero(membranes[layer] > thr[layer % 2])[0]
-
+        
+        if layer == 2:
+            # model_visible layer
+            recon_distr[newspikes] += 1
         
         for newspike in newspikes:
             #import ipdb; ipdb.set_trace() # BREAKPOINT
@@ -293,12 +423,12 @@ class SRBM(object):
             if (layer % 2 == 1):
                 #import ipdb; ipdb.set_trace()
                 weight_adj = (last_spiked[layer - 1] > (sp_time - cf.stdp_lag)) * (wt_direction * cf.eta)
-                #import ipdb; ipdb.set_trace() # BREAKPOINT
-                weights[:, newspike] += weight_adj
-                # log weight update
 
-                #log(history, sp_time, ('UPDATE_WEIGHTS', newspike, np.random.random(weights.shape[0])))
-                if np.any(weight_adj):
+                if cf.enable_update:
+                    weights[:, newspike] += weight_adj
+
+                if cf.simulate and cf.show_weight_deltas and np.any(weight_adj):
+                    # log weight update
                     weights_to_log = np.copy(weights[:, newspike])
                     self.log(history, sp_time, ('UPDATE_WEIGHTS', newspike, weights_to_log))
                 #print np.max(weight_adj) ,np.min(weight_adj)
@@ -314,7 +444,9 @@ class SRBM(object):
             rand_delay = np.random.random() * cf.axon_delay * 2
             new_time = sp_time + cf.axon_delay + rand_delay
             new_triplet = Spike(time= new_time, layer=layer, address=newspike)
-            self.log(history, new_time, ('SPIKE', layer, newspike))
+            if cf.simulate:
+                self.log(history, new_time, ('SPIKE', layer, newspike))
+
             if (layer != 3):
                 # TODO amb rng.nextfloat()
                 pq.put(new_triplet)
@@ -326,9 +458,10 @@ if __name__ == '__main__':
     srbm = SRBM(args) # create and initialize spiking rbm network
     srbm.load_data()
 
-    history = srbm.train_network(args, args.visible_size, args.hidden_size, args.num_samples)
+    history, weights = srbm.run_network()
+    np.save(args.save_weights, weights)
     
     dashboard = myex.DashBoard(sorted(history.items()), args.visible_size, args.hidden_size)
-    dashboard.plot_reconstr_accuracy()
+    #dashboard.plot_reconstr_accuracy()
     if args.simulate:
         dashboard.plot_thigns()

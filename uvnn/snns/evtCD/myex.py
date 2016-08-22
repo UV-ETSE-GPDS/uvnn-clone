@@ -12,16 +12,20 @@ import matplotlib.pyplot as plt
 class DashBoard(object):
     def __init__(self, history, visible_size, hidden_size):
         # history is an array of (time, data) see history definition in evtcd.py
-        self.w_row = 4   # weights are shown in 10 x 10 grid on picture
-        self.w_col = 4   # NOTE TODO(refactor) change it if you change dims 
+        grid_side = int(np.sqrt(hidden_size - 1)) + 1
+        self.w_row = self.w_col = grid_side   # grid for visualizing weights
         
         self.history = history
         self.visible_size = visible_size
         self.hidden_size = hidden_size
-        img_sz_vis = (28, 28)
-        img_sz_hid = (4, 4)
+
+        # compute img_sz_viz, by default we take sqrts of sizes
+        vis_side = int(np.sqrt(visible_size + 0.1))
+        hid_side = int(np.sqrt(hidden_size + 0.1))
+        img_sz_vis = (vis_side, vis_side)
+        img_sz_hid = (hid_side, hid_side)
         self.layer_sizes = [img_sz_vis, img_sz_hid, img_sz_vis, img_sz_hid]
-        self.show_lastn_spike = 100
+        self.show_lastn_spike = 200
         self.last_spikes = [collections.deque(
             maxlen=self.show_lastn_spike) for _ in range(5)]
         self.ind = 0 # index in the history array
@@ -78,7 +82,6 @@ class DashBoard(object):
         ax3 = fig.add_subplot(223)
         ax3.plot(max_weights)
         ax3.set_title('max_weights')
-        plt.tight_layout()
         plt.show()
         
 
@@ -218,11 +221,13 @@ class DashBoard(object):
         img[2, 15] = 1
         self.input_train_img.setImage(img)
 
-    def update_weights_plot(self, column, new_vals):
+    def update_weights_plot(self, column, new_vals, color_delta):
         delta = new_vals - self.weights_data[:, column]
         delta = self.as_image(delta, 0)
-        if not np.any(delta):
-            return
+        
+
+        # color_delta controls if we wont to color updated regions
+
         # if positive increased, if negative decreased
         # increasing visualized in red, decreasing in blue
         #import ipdb; ipdb.set_trace()
@@ -238,19 +243,19 @@ class DashBoard(object):
         self.weights_imgs_data[:,:,1] = normalized
         self.weights_imgs_data[:,:,2] = normalized
 
-        pos_delta = np.nonzero(delta > 0)
-        neg_delta = np.nonzero(delta < 0)
-        if np.any(neg_delta):
-            repl = self.weights_imgs_data[neg_delta]
-            repl[:,:] = [0, 0, 1]
-            self.weights_imgs_data[neg_delta] = repl
-            print 'negative update'
-        if np.any(pos_delta):
-            repl = self.weights_imgs_data[pos_delta]
-            repl[:,:] = [1, 0, 0] # change color to red
-            self.weights_imgs_data[pos_delta] = repl
-            print 'positive update'
-
+        if color_delta: 
+            pos_delta = np.nonzero(delta > 0)
+            neg_delta = np.nonzero(delta < 0)
+            if np.any(neg_delta):
+                repl = self.weights_imgs_data[neg_delta]
+                repl[:,:] = [0, 0, 1]
+                self.weights_imgs_data[neg_delta] = repl
+                print 'negative update'
+            if np.any(pos_delta):
+                repl = self.weights_imgs_data[pos_delta]
+                repl[:,:] = [1, 0, 0] # change color to red
+                self.weights_imgs_data[pos_delta] = repl
+                print 'positive update'
 
         self.weight_imgs[column].setImage(self.weights_imgs_data)
         #self.weight_imgs[column].setImage(normalized)
@@ -267,7 +272,7 @@ class DashBoard(object):
             self.spike_datas[trip_layer][x][y] = 0
 
         # fade everything
-        self.spike_datas[trip_layer] *= 0.95
+        self.spike_datas[trip_layer] *= 0.99
         
         self.last_spikes[trip_layer].append(triplet)
         # turn on the latest spike
@@ -304,12 +309,12 @@ class DashBoard(object):
                 self.weights_data = vals #full weights(usually comes initially)
                 # visualize for each column
                 for y in range(self.hidden_size):
-                    self.update_weights_plot(y, self.weights_data[:, y])
+                    self.update_weights_plot(y, self.weights_data[:, y], False)
             elif evt_type == 'UPDATE_WEIGHTS':
-                column, new_vals = event[1], event[2] 
+                column, new_vals, color_delta = event[1], event[2], event[3]
                 #print self.weights_data[:, 2]
                 # x - visible neuron, y - hidden neuron
-                self.update_weights_plot(column,  new_vals)
+                self.update_weights_plot(column,  new_vals, color_delta)
                 #print np.max(self.weights_data), np.min(self.weights_data)
             
                 #print 'ohoo', column
@@ -328,8 +333,8 @@ class DashBoard(object):
             
     def getxy(self, address, layer):
         # convert 1d neuron coordinate to 2d
-        return (address % self.layer_sizes[layer][0], 
-                address / self.layer_sizes[layer][1])
+        return (address / self.layer_sizes[layer][0], 
+                address % self.layer_sizes[layer][1])
 
 #db = DashBoard(1)
 #db.plot_thigns()
