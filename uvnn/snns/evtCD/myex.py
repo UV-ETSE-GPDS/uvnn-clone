@@ -85,7 +85,7 @@ class DashBoard(object):
         plt.show()
         
 
-    def plot_thigns(self):
+    def run_vis(self):
         app = QtGui.QApplication([])
         
         view = pg.GraphicsView()
@@ -218,8 +218,11 @@ class DashBoard(object):
     def update_train_plot(self, vals):
         ''' Plot for Input train image '''
         img = self.as_image(vals, 0)
-        img[2, 15] = 1
         self.input_train_img.setImage(img)
+
+    def update_all_weights_plot(self, weights_data):
+        for y in range(self.hidden_size):
+            self.update_weights_plot(y, weights_data[:, y], False)
 
     def update_weights_plot(self, column, new_vals, color_delta):
         delta = new_vals - self.weights_data[:, column]
@@ -290,7 +293,8 @@ class DashBoard(object):
         # spike img
         #for img in self.spike_imgs:
         #    img.setImage(self.data[self.i])
-       
+        if len(self.history) == 0:
+            return # nothing to do
         cur_time, events = self.history[self.ind]
         self.time_lab.setText(('%2.3fs'%cur_time))
         for event in events:

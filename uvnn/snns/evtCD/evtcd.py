@@ -1,3 +1,6 @@
+import matplotlib
+#matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import time
 import copy
 import sys
@@ -7,10 +10,10 @@ import myex
 from uvnn.utils.readers import CsvReader
 from collections import namedtuple
 from Queue import PriorityQueue
-import matplotlib.pyplot as plt
 from uvnn.utils.images import show_images
 from collections import defaultdict
 from common import Param, Spike, str2bool
+from uvnn.utils.images import show_images
 
 
 #unknown things
@@ -27,6 +30,8 @@ parser.add_argument("--thresh_eta", type=float, default=0,
         help="Threshold learning rate")
 parser.add_argument("--numspikes", type=int, default=2000, 
         help="Number of spikes for one input sample during [timespan] seconds")
+parser.add_argument("--numspikes_label", type=int, default=1000, 
+        help="Number of spikes for label during [timespan] seconds (if trained in supervized way)")
 parser.add_argument("--timespan", type=float, default=0.1, 
         help="durition in which [numspikes] of one sample digit happen")
 parser.add_argument("--tau", type=float, default=0.005, 
@@ -36,7 +41,7 @@ parser.add_argument("--inp_scale", type=float, default=0.1,
         help="value to use for the first layer membrane potential addition (Doesn't matter much)")
 parser.add_argument("--t_refrac", type=float, default=0.005, 
         help="Refractory period")
-parser.add_argument("--stdp_lag", type=float, default=0.003, 
+parser.add_argument("--stdp_lag", type=float, default=0.004, 
         help="STDP window length")
 parser.add_argument("--min_thr", type=float, default=-1, 
         help="minimum threshold")
@@ -49,7 +54,7 @@ parser.add_argument("--t_gap", type=float, default=10,
 parser.add_argument("--visible_size", type=int, default=784, 
         help="number of neurons in the visible layer")
 parser.add_argument("--hidden_size", type=int, default=16, 
-        help="number of neurons in the hidden layer")
+        help="number of neurons in the hidden layer, for visualisation better to be a square number")
 
 # training params
 parser.add_argument("--input_file", default=None) 
@@ -80,7 +85,13 @@ parser.add_argument("--save_weights", default='temp.npy',
         help="Path to save weights")
 
 parser.add_argument("--load_weights", default=None, 
-        help="Path to save weights")
+        help="Path to load weights")
+
+parser.add_argument("--train_supervised", type=str2bool,  default=True,
+        help="Train in a suprevized way, labels and num_classes must be provided")
+
+parser.add_argument("--num_classes", type=int, default=10, 
+        help="number of classes if the supervized training is enabled, labels start from 0")
 
 # Logs, plots
 
@@ -99,7 +110,9 @@ arguments = parser.parse_args()
 class SRBM(object):
     def __init__(self, args):
         self.args = args
-
+        #self.W_dashboard = myex.DashBoard([], args.visible_size, args.hidden_size)
+        #self.W_dashboard.run_vis() # just to draw windows
+        #import ipdb; ipdb.set_trace()
         pass
     
     def load_data(self):
@@ -148,17 +161,39 @@ class SRBM(object):
         if self.args.shuffle:
             order = np.array(range(self.X.shape[0]))
             np.random.shuffle(order)
+            self.y = self.y[order]
             self.X = self.X[order]
-
 
         num_test = self.args.num_test
         num_train = self.args.num_train
         # put away some part for testing purposes if desired
         self.X_test = self.X[:num_test]
         self.X_train = self.X[num_test: num_test + num_train]
+        if self.y is not None: 
+            self.y_test = self.y[:num_test]
+            self.y_train = self.y[num_test: num_test + num_train]
+    
+    def evaluate_accuracy(self, W_full):
+        new_args = copy.copy(self.args)
+        new_args.log_reconstr = True
 
-    def error_on_test(self, W):
-        ''' Return some kind of error on test data for weights W,
+        cf = self.args 
+        W = W_full[:cf.visible_size, :]
+        W_label = W_full[cf.visible_size:, :]
+        acc = self.run_network_classify(cf, W, W_label, self.X_test, self.y_test)
+        
+        plt.close()
+        #plt.figure(figsize=(5, 5))
+        show_images(W.T, 28, 28)
+        plt.show(block=False)
+        
+        # visualize weights
+        #self.W_dashboard.update_all_weights_plot(W)
+        return acc
+
+
+    def evaluate_on_test(self, W):
+        ''' evaluate on a test data for weights W,
             For now it will be the average L2 norm of distribution difference 
             between true spike and network spike distributions
         '''
@@ -171,11 +206,11 @@ class SRBM(object):
         new_args.simulate = False
         new_args.plot_curve = False
         new_args.test_every = None
-         
+        new_args.train_supervised = False 
         srbm = SRBM(new_args) # create new network
         #import ipdb; ipdb.set_trace()
         srbm.set_data(self.X_test)
-        history, _ = srbm.run_network(init_weights = np.copy(W))
+        history, _ = srbm.run_network(init_weights = np.copy(W[:784]))
 
         # extract all reconstr distributions
         
@@ -203,6 +238,101 @@ class SRBM(object):
         avg_err = sum(errors) / float(num_test)
         print 'Testing.. average error is', avg_err
         return avg_err
+    
+    def run_network_classify(self, cf, W, W_label, X_test, 
+            y_test=None):
+        # run three layer architectur visible, hidden, label to classify 
+        # samples in a supervised training
+        
+        pq = PriorityQueue()
+        
+        membranes = []
+        last_spiked = []
+        refrac_end = []
+        last_update = []
+        
+        vis_size = cf.visible_size
+        hid_size = cf.hidden_size
+        label_size = cf.num_classes
+        sizes = (vis_size, hid_size, label_size)
+        
+        
+        # init network 
+        for layer_size in sizes:
+            membranes.append(np.zeros(layer_size))
+            last_spiked.append(np.zeros(layer_size))
+            last_spiked[-1].fill(-100)  # not to cause first spikes accidentally
+            last_update.append(np.zeros(layer_size))
+            refrac_end.append(np.zeros(layer_size))
+    
+
+        t_passed = 0
+        correct = 0
+        for (sample_num, x) in enumerate(X_test):
+            spike_train_sample = self.data_to_spike(x, cf.numspikes, cf.timespan)
+
+            for addr, time in spike_train_sample:
+                # spike fired from '-1th' layer
+                pq.put(Spike(time=time + t_passed, layer=0, address=addr))               
+
+            t_passed = t_passed + cf.timespan + cf.t_gap
+
+            spike_count_label = np.zeros(label_size) # count spikes from label layer
+
+            while not pq.empty():
+                spike_triplet = pq.get()
+                
+                sp_time = spike_triplet.time
+                sp_layer = spike_triplet.layer
+                sp_address = spike_triplet.address
+
+                layer = sp_layer + 1
+
+                if layer == 1:
+                    last_spiked[0][sp_address] = sp_time - cf.axon_delay
+                
+                membranes[layer] *= np.exp(-(sp_time - last_update[layer]) / cf.tau)
+
+                # add impules
+                if layer == 1:
+                    # hidden
+                    membranes[layer] += W[sp_address, :] * (refrac_end[layer] < sp_time)
+                elif layer == 2:
+                    # hidden
+                    membranes[layer] += W_label[:, sp_address] * (refrac_end[layer] < sp_time)
+                
+                last_update[layer] = sp_time
+
+                newspikes = np.nonzero(membranes[layer] > cf.thr)[0]
+
+                refrac_end[layer][newspikes] = sp_time + cf.t_refrac
+                membranes[layer][newspikes] = 0
+                 
+                if layer == 2:
+                    spike_count_label[newspikes] += 1
+                     
+                for newspike in newspikes:
+                    rand_delay = np.random.random() * cf.axon_delay * 2
+                    new_time = sp_time + cf.axon_delay + rand_delay
+                    new_triplet = Spike(time= new_time, layer=layer, address=newspike)
+                    if (layer != 2):
+                        pq.put(new_triplet)
+            
+            #print spike_count_label
+            y_hat = np.argmax(spike_count_label)
+            y = y_test[sample_num]
+            
+            if y_hat == y:
+                correct += 1
+            #else:
+                #print 'mistake mixed', y_hat, y
+        
+        acc = float(correct) / len(y_test)
+        print 'Accuracy - ', acc
+
+        # visualize weights
+
+        return  acc
 
     def run_network(self, init_weights=None):
         pq = PriorityQueue()
@@ -223,6 +353,13 @@ class SRBM(object):
 
         vis_size = cf.visible_size
         hid_size = cf.hidden_size
+        
+        # increase number of vis_size if training via supervized way
+        # see page 29 in thesis, for the picture
+        if cf.train_supervised:
+            # last num_classes number of input vector will be preserved for
+            # labels
+            vis_size += cf.num_classes
 
         
         if init_weights is None:
@@ -275,10 +412,12 @@ class SRBM(object):
                 W += batch_W_delta / cf.batch_size
                 batch_W_delta.fill(0)
 
-            if cf.test_every is not None and sample_num % cf.test_every == 0:
+            if cf.test_every is not None and (sample_num + 1) % cf.test_every == 0:
                 # run current network on test set for training curve
-                if sample_num != 0:
-                    self.errors.append(self.error_on_test(W))
+                #import ipdb; ipdb.set_trace()
+                print 'Trained on %d, W - max: %.3f, min %.3f, avg %.3f' % (sample_num + 1, 
+                        np.max(W), np.min(W), np.average(W))
+                self.errors.append(self.evaluate_accuracy(W))
 
 
             spike_train_sample = self.data_to_spike(x, cf.numspikes, cf.timespan)
@@ -286,10 +425,19 @@ class SRBM(object):
             # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
         
             spike_image = np.zeros(vis_size)
-            for spike, time in spike_train_sample:
+            for addr, time in spike_train_sample:
                 # spike fired from '-1th' layer
-                pq.put(Spike(time=time + t_passed, layer=0, address=spike))               
-                spike_image[spike] += 1
+                pq.put(Spike(time=time + t_passed, layer=0, address=addr))               
+                spike_image[addr] += 1
+
+            if cf.train_supervised:
+                # add label spikes
+                step = cf.timespan / float(cf.numspikes_label)
+                # spikes for the labels are in the end
+                addr = vis_size - 10 + self.y_train[sample_num]
+
+                for time in np.arange(0, cf.timespan, step):
+                    pq.put(Spike(time=time + t_passed, layer=0, address=addr))
             
             # add spike image to history, but normalize first
             if cf.simulate or cf.log_reconstr:
@@ -327,9 +475,12 @@ class SRBM(object):
 
         # plot errors 
         if cf.plot_curve:
+            fig = plt.figure()
+            fig.suptitle('\n'.join(str(self.args).split(',')), fontsize=8)
+            ax2 = fig.add_subplot(111)
             plt.plot(self.errors)
             plt.show()
-
+        
         return history, W
 
     def add_noise(self, membrane, layer_num):
@@ -373,16 +524,16 @@ class SRBM(object):
         #decay membrane
 
         membranes[layer] *= np.exp(-(sp_time - last_update[layer]) / cf.tau)
-        if np.any(membranes[layer] > 500):
-            import ipdb; ipdb.set_trace() # BREAKPOINT
 
 
         #add impulse
         if layer == 0:
             membranes[layer][sp_address] += cf.inp_scale
-        elif layer % 2 == 0:
+        elif layer == 2:
+            # visible layer
             membranes[layer] += weights[:, sp_address] * (refrac_end[layer] < sp_time)
-        else:
+        elif layer == 1 or layer == 3:
+            # hidden layer
             membranes[layer] += weights[sp_address, :] * (refrac_end[layer] < sp_time)
 
 
@@ -462,7 +613,6 @@ class SRBM(object):
                 self.log(history, new_time, ('SPIKE', layer, newspike))
 
             if (layer != 3):
-                # TODO amb rng.nextfloat()
                 pq.put(new_triplet)
 
 
@@ -471,11 +621,11 @@ if __name__ == '__main__':
     args = parser.parse_args()  # get algorithm arguments from cmd
     srbm = SRBM(args) # create and initialize spiking rbm network
     srbm.load_data()
-
+    #import ipdb; ipdb.set_trace()
     history, weights = srbm.run_network()
     np.save(args.save_weights, weights)
     
     dashboard = myex.DashBoard(sorted(history.items()), args.visible_size, args.hidden_size)
     #dashboard.plot_reconstr_accuracy()
     if args.simulate:
-        dashboard.plot_thigns()
+        dashboard.run_vis()
