@@ -114,3 +114,13 @@ Now trained weights are saved in myweights.npy, if we want to visualise running 
 <img src="https://s9.postimg.org/af6uwbapb/Screen_Shot_2016_08_22_at_4_53_20_AM.png" alt="alt text" width="900" height="whatever">
 
 
+
+
+# Profiling
+Profiling is done via https://github.com/rkern/line_profiler, To measure speed improvement after planned refactoring
+
+script for profiling  before refactoring:
+`kernprof -l -v evtcd.py --num_train=100 --num_test=100 
+--test_every=50 --hidden_size=100 --simulate=False --plot_curve=True` results are stored in  evtcd_before.lprof 
+ 
+[link](https://gist.github.com/scientist1642/c12e05bef97116c7a691cc02b458c3d8)
