@@ -110,6 +110,11 @@ Now trained weights are saved in myweights.npy, if we want to visualise running 
 `python evtcd.py --num_train=10 --num_test=0  --simulate=True --enable_update=False --hidden_size=100 --load_weights 'myweights.npy'`
 
  
+Timestep implementation, getting 75% accuracy in 10K examples
+`python main.py --num_train=10000 --num_test=1000 --test_every=500 --hidden_size=100 --simulate=False --plot_curve=False --implementation=TIME_STEPPED --train_supervised=True --stdp_lag=0.006 --tau=0.01 --t_refrac=0.005 --dt=0.001 --batch_size=1hidden_size=100 --simulate=False --plot_curve=False --implementation=TIME_STEPPED --train_supervised=True --stdp_lag=0.006 --tau
+ `
+
+
 
 <img src="https://s9.postimg.org/af6uwbapb/Screen_Shot_2016_08_22_at_4_53_20_AM.png" alt="alt text" width="900" height="whatever">
 
