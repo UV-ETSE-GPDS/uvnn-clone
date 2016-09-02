@@ -1,10 +1,13 @@
 import numpy as np
 import copy
+import seaborn as sns
+sns.set(color_codes=True)
 import matplotlib.pyplot as plt
 from Queue import PriorityQueue
-from common import data_to_spike, prepare_dataset
+from common import data_to_spike, prepare_dataset, wrapText
 from common import Param, Spike, str2bool, data_to_spike, prepare_dataset
 from uvnn.utils.images import show_images
+
 
 class SRBM_TS(object):
     ''' Spiking RBM, Time-stepped implementation '''
@@ -17,9 +20,9 @@ class SRBM_TS(object):
         self.X = X
         self.y = y
 
-
-    def run_network(self, X, y, args, evaluate=False, W_init=None, accuracies = []):
-        ''' if only_evaluate is True it will only evaluate accuracy on the provided set '''
+    def run_network(self, X, y, args, phase='TRAIN', W_init=None, examples_seen = 0, 
+            accuracies = [], heatmaps = []):
+        ''' phase is either TRAIN or EVAL '''
         logger = self.logger
         batch_size = args.batch_size
         
@@ -33,19 +36,21 @@ class SRBM_TS(object):
             vis_size += args.num_classes
 
 
-
         layer_sizes = [vis_size, hid_size, vis_size, hid_size]
         
-        if evaluate:
+        if phase == 'EVAL':
             # evaluate accuracy, using uncupling pretrained network see page 29 
             logger.info('Running evaluation')
             layer_sizes.append(args.num_classes)
         
         if W_init is None:
             # use random weight
-            W = np.random.random((vis_size, hid_size)) # network weights
+            if args.load_weights is not None:
+                W = np.load(args.load_weights)
+            else:
+                W = np.random.random((vis_size, hid_size))
 
-        if evaluate is True:
+        if phase == 'EVAL':
             if W_init is None:
                 logger.error('Weights should be provided to evaluate ' )
 
@@ -61,7 +66,7 @@ class SRBM_TS(object):
             last_spiked = []
             firings = []
             noises = []
-
+            noise_uniform = args.noise_uniform
             for lsz in layer_sizes:
                 membranes.append(np.zeros((batch_size, lsz)))
                 last_spiked.append(np.zeros((batch_size, lsz)))
@@ -73,11 +78,12 @@ class SRBM_TS(object):
            
             cur_time = 0
             classified_correctly = 0 # used when evaluating
-            heatmap = np.zeros((args.num_classes, args.num_classes))
+            heatmap = np.zeros((args.num_classes, args.num_classes), dtype=int)
             for batch in range(num_batches):
                 #if not evaluate:
                 #    logger.info('Processing batch from #%d' %(batch * batch_size, ))
                 label_firing_count = np.zeros((batch_size, args.num_classes)) # for classification only not for training
+                total_input_spikes = 0
                 for t in np.arange(cur_time, cur_time + args.timespan, args.dt): 
                     # get batch spikes
                     l = batch * batch_size
@@ -88,20 +94,36 @@ class SRBM_TS(object):
                  
                     if args.train_supervised:
                         in_current_labels = np.zeros((batch_size, args.num_classes))
-                        in_current_labels[range(batch_size), lab_current] = 0.5
+                        in_current_labels[range(batch_size), lab_current] = 0.9
                         in_current = np.hstack((in_current, in_current_labels))
 
                         
                         
                 
                     rand_nums = np.random.random((batch_size, vis_size))
-                    firings[0] =  (rand_nums < in_current)
+                    rand_noise = np.random.random((batch_size, vis_size)) * noise_uniform
+                    noise_uniform *= args.noise_decay
+                    firings[0] =  (rand_nums  < in_current + rand_noise)
+                    
+
+                    total_input_spikes += np.count_nonzero(firings[0])
                    # import ipdb; ipdb.set_trace()
                     last_spiked[0][firings[0]] = t
                     
                     for pop in range(1, len(layer_sizes)):
                         # decay membrane
-                        membranes[pop] = membranes[pop] * np.exp(-args.dt / args.tau)
+                        #import ipdb; ipdb.set_trace()
+
+                        if args.linear_decay is None or (args.linear_decay_only_in_eval 
+                                and phase == 'TRAIN'):
+                            membranes[pop]*= np.exp(-args.dt / args.tau)
+                        else:
+                            membranes[pop]-= args.linear_decay
+                            membranes[pop][membranes[pop] < 0] = 0
+
+                        #if membranes[pop].any():
+                        #    import ipdb; ipdb.set_trace()
+                        #membranes[pop] = membranes[pop] * np.exp(-args.dt / args.tau)
                          
                         # add impulses
                         if pop == 1 or pop == 3:
@@ -117,6 +139,8 @@ class SRBM_TS(object):
 
                         # get firings
                         firings[pop] = membranes[pop] > args.thr
+                        #if firings[pop].any():
+                        #    print np.average(firings[pop]
                         membranes[pop][firings[pop]] = 0
                         refrac_end[pop][firings[pop]] = t + args.t_refrac
                         last_spiked[pop][firings[pop]] = t
@@ -129,12 +153,14 @@ class SRBM_TS(object):
                     # now learn if not evaluating
                     
                     # stdp
-                    if not evaluate and args.enable_update:
+                    if phase == 'TRAIN' and args.enable_update:
                         dWp = dWn = 0
                         if np.any(firings[1]):
-                            dWp = args.eta * (np.dot((last_spiked[0] > t - args.stdp_lag).T, firings[1]))
+                            xx = (last_spiked[0] > t - args.stdp_lag) #* (last_spiked[0] < t-1e-9)
+                            dWp = args.eta * (np.dot(xx.T, firings[1]))
                         if np.any(firings[3]):
-                            dWn  =  args.eta * (np.dot((last_spiked[2] > t - args.stdp_lag).T, firings[3]))
+                            xx = (last_spiked[2] > t - args.stdp_lag)
+                            dWn  =  args.eta * (np.dot(xx.T, firings[3]))
                         
                         dW = (dWp - dWn) / batch_size
                         #if dW.any():
@@ -144,35 +170,37 @@ class SRBM_TS(object):
                 cur_time = cur_time + args.timespan + args.t_gap
                 for pop in range(1, len(layer_sizes)):
                     membranes[pop] *= np.exp(-args.t_gap / args.tau)
-                
                 if args.train_supervised:
                     examples_seen = (batch + 1) * batch_size
                     if examples_seen / args.test_every > (examples_seen - batch_size) / args.test_every:
 
                         logger.info('Processed #%d examples' %(examples_seen, ))
+                        logger.info('Noise is %.3f' %(noise_uniform,))
                         # time to evaluate network
                         newargs = copy.copy(args)
                         newargs.batch_size = 1
                         newargs.train_supervised = False
-                        self.run_network(self.X_test, self.y_test, newargs, evaluate=True, 
-                                W_init=W, accuracies=accuracies)
+                        self.run_network(self.X_test, self.y_test, newargs, 
+                                phase='EVAL', W_init=W, examples_seen=examples_seen, 
+                                accuracies=accuracies, heatmaps=heatmaps)
                 
-                if evaluate:
+                if phase == 'EVAL':
                     #print label_firing_count[0]
                     #print 'correct is ', lab_current[0]
                     y_hats = np.argmax(label_firing_count, axis=1)
                     classified_correctly += np.count_nonzero(y_hats == lab_current)
                     heatmap[y_hats, lab_current] += 1
 
-        if evaluate:
+        if phase == 'EVAL':
             logger.info('Correctly classified %d out ouf %d' %(classified_correctly, len(y)))
             acc = classified_correctly / float (len(y))
             print acc
-            accuracies.append(acc)
+            accuracies.append((examples_seen, acc))
+            heatmaps.append(heatmap)
             plt.close()
             #plt.figure(figsize=(5, 5))
             print 'minmax', np.min(W), np.max(W), np.average(W)
-            print heatmap
+            #print heatmap
             show_images(W.T, 28, 28)
             plt.show(block=False)
         return {}, W
@@ -183,7 +211,33 @@ class SRBM_TS(object):
         self.X_train, self.y_train, self.X_test, self.y_test =  prepare_dataset(self.X, self.y, self.args)
         self.logger.info('Dataset prepared, Ttrain, Test splits ready to use')
         accuracies = []
-        self.run_network(self.X_train, self.y_train, self.args, evaluate=False, 
-                accuracies=accuracies)
+        heatmaps = []
+        hist, W = self.run_network(self.X_train, self.y_train, self.args, phase='TRAIN', 
+                accuracies=accuracies, heatmaps=heatmaps)
+        import pickle
+        pickle.dump( accuracies, open( "accs.p", "wb" ) )
+        last_heatmap = heatmaps[-1]
+        if self.args.plot_curve:
+            fig = plt.figure()
+            #fig.suptitle(3*'\n'.join(str(self.args).split(',')), fontsize=8)
+            ax1 = fig.add_subplot(221)
+            ax1.set_xlabel('Samples seen')
+            ax1.set_ylabel('Accuracies')
+            examples_seen, accs = zip(*accuracies)
+            ax1.plot(examples_seen, accs)
+            
+            ax2 = fig.add_subplot(222)
+            sns.heatmap(last_heatmap, annot=True, fmt='d', ax=ax2)
+            ax2.set_xlabel('True values')
+            ax2.set_ylabel('Predicted values')
 
-
+            ax3 = fig.add_subplot(223)
+            #ax2.text(0, 0, 'aaa')
+            ax3.set_xlabel('Parameters')
+            an = ax3.annotate(str(self.args), fontsize=10, xy=(0.1, 1), ha='left', va='top', xytext=(0, -6),
+                            xycoords='axes fraction', textcoords='offset points')
+            wrapText(an)
+            #ax2.text(0.5, 0.5,str(self.args), horizontalalignment='center',
+            #        verticalalignment='center', transform=ax2.transAxes, fontsize=8)
+            plt.show(block=True)
+        return hist, W

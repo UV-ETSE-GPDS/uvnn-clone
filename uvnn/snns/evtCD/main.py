@@ -38,6 +38,12 @@ parser.add_argument("--inp_scale", type=float, default=0.1,
         help="value to use for the first layer membrane potential addition (Doesn't matter much)")
 parser.add_argument("--t_refrac", type=float, default=0.005, 
         help="Refractory period")
+parser.add_argument("--linear_decay", type=float, default=None, 
+        help="linear approximation constant for decaying")
+
+parser.add_argument("--linear_decay_only_in_eval", type=bool, default=False, 
+        help="If this is true linear decay will only be used in evaluation phase, not in training")
+
 parser.add_argument("--stdp_lag", type=float, default=0.003, 
         help="STDP window length")
 parser.add_argument("--min_thr", type=float, default=-1, 
@@ -46,7 +52,10 @@ parser.add_argument("--axon_delay", type=float, default=0.0001,
         help="axon delay, how long the spike takes to travel to the next layer")
 parser.add_argument("--t_gap", type=float, default=10, 
         help="time gap between different training samples")
-
+parser.add_argument("--noise_uniform", type=float, default=0.1, 
+        help="Uniform noise to add to spike distributioin")
+parser.add_argument("--noise_decay", type=float, default=1, 
+        help="Decay rate of noise( decayed in every batch operation)")
 # Network param s
 parser.add_argument("--visible_size", type=int, default=784, 
         help="number of neurons in the visible layer")
@@ -114,23 +123,24 @@ logger.setLevel(args.log_level)
 
 np.random.seed(2)           # to rerun the same experiments
 
+X, y = load_data(args, logger)
+
 if args.implementation == 'EVENT_BASED':
     args.batch_size = None # batch training in event based implementation not working properly
     srbm = SRBM_EB(args, logger) # create and initialize spiking rbm network
     logger.info('Loaded Event based implementation of evtCD')
+    srbm.set_data(X, y)
 elif args.implementation == 'TIME_STEPPED':
     srbm = SRBM_TS(args, logger)
     logger.info('Loaded time-stepped implementation of evtCD')
+    
+    srbm.set_data(X, y)
+    history, weights = srbm.train_network()
+    np.save(args.save_weights, weights)
+    dashboard = myex.DashBoard(sorted(history.items()), args.visible_size, args.hidden_size)
 
 
-X, y = load_data(args, logger)
 
-srbm.set_data(X, y)
-
-history, weights = srbm.train_network()
-np.save(args.save_weights, weights)
-
-dashboard = myex.DashBoard(sorted(history.items()), args.visible_size, args.hidden_size)
 #dashboard.plot_reconstr_accuracy()
 if args.simulate:
     dashboard.run_vis()
