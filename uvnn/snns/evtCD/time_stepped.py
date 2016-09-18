@@ -105,7 +105,7 @@ class SRBM_TS(object):
                     noise_uniform *= args.noise_decay
                     firings[0] =  (rand_nums  < in_current + rand_noise)
                     
-
+                    #print np.count_nonzero(firings[0])
                     total_input_spikes += np.count_nonzero(firings[0])
                    # import ipdb; ipdb.set_trace()
                     last_spiked[0][firings[0]] = t
@@ -201,8 +201,9 @@ class SRBM_TS(object):
             #plt.figure(figsize=(5, 5))
             print 'minmax', np.min(W), np.max(W), np.average(W)
             #print heatmap
-            show_images(W.T, 28, 28)
-            plt.show(block=False)
+            if args.plot_curve:
+                show_images(W.T, 28, 28)
+                plt.show(block=False)
         return {}, W
 
 
@@ -214,8 +215,8 @@ class SRBM_TS(object):
         heatmaps = []
         hist, W = self.run_network(self.X_train, self.y_train, self.args, phase='TRAIN', 
                 accuracies=accuracies, heatmaps=heatmaps)
-        import pickle
-        pickle.dump( accuracies, open( "accs.p", "wb" ) )
+        #import pickle
+        #pickle.dump( accuracies, open( "accs.p", "wb" ) )
         last_heatmap = heatmaps[-1]
         if self.args.plot_curve:
             fig = plt.figure()
@@ -240,4 +241,4 @@ class SRBM_TS(object):
             #ax2.text(0.5, 0.5,str(self.args), horizontalalignment='center',
             #        verticalalignment='center', transform=ax2.transAxes, fontsize=8)
             plt.show(block=True)
-        return hist, W
+        return hist, W, accuracies

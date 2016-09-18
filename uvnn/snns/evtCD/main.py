@@ -1,12 +1,17 @@
 import argparse
+import copy
 import numpy as np
-import myex
+import visual
 import logging
+import pickle
 logging.basicConfig(format='%(asctime)s %(message)s')
 from event_based import SRBM_EB
 from time_stepped import SRBM_TS
 from common import str2bool
 from common import load_data
+import seaborn as sns
+sns.set(color_codes=True)
+import matplotlib.pyplot as plt
 
 #unknown things
 # stdp_lag ??
@@ -17,7 +22,7 @@ from common import load_data
 parser = argparse.ArgumentParser(description='evtcd algorithm with simulation')
 
 # Algorithm params
-parser.add_argument("--implementation", choices=["TIME_STEPPED", "EVENT_BASED"], 
+parser.add_argument("--implementation", choices=["TIME_STEPPED", "EVENT_BASED", "EXPERIMENT"], 
         default="EVENT_BASED", help="Log level.")
 
 parser.add_argument("--eta", type=float, default=0.001, help="Learning rate")
@@ -116,12 +121,13 @@ parser.add_argument("--show_weight_deltas", type=str2bool, default=False,
 parser.add_argument("--log_level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], 
         default="INFO", help="Log level.")
 
+parser.add_argument("--seed", type=int, default=3, help="random seed to rerun experiments")
 
 args = parser.parse_args()  # get algorithm arguments from cmd
 logger = logging.getLogger()
 logger.setLevel(args.log_level)
 
-np.random.seed(2)           # to rerun the same experiments
+np.random.seed(args.seed)           # to rerun the same experiments
 
 X, y = load_data(args, logger)
 
@@ -130,17 +136,115 @@ if args.implementation == 'EVENT_BASED':
     srbm = SRBM_EB(args, logger) # create and initialize spiking rbm network
     logger.info('Loaded Event based implementation of evtCD')
     srbm.set_data(X, y)
+    srbm.train_network()
 elif args.implementation == 'TIME_STEPPED':
     srbm = SRBM_TS(args, logger)
     logger.info('Loaded time-stepped implementation of evtCD')
     
     srbm.set_data(X, y)
-    history, weights = srbm.train_network()
+    history, weights, accs = srbm.train_network()
     np.save(args.save_weights, weights)
-    dashboard = myex.DashBoard(sorted(history.items()), args.visible_size, args.hidden_size)
+    dashboard = visual.DashBoard(sorted(history.items()), args.visible_size, args.hidden_size)
+elif args.implementation == 'EXPERIMENT':
+    # Experimetns
+    
+    exps = []     # list of experiment labels and args
+
+    # expargs[0] is reserved for baseline solution
+    def makeargs(param, val):
+        assert param in args.__dict__, 'unknown paramter'
+        label = param + ' = ' + str(val)
+        newarg = copy.copy(args)
+        newarg.__dict__[param] = val
+        return (label, newarg)
+    
+    exps.append(('baseline', args))  # baseline solution provided from cmd don't touch
+    
+    # EDIT EXPERIMENTS BELOW
+    
+    
+    # number of layers
+    exps.append(makeargs('hidden_size', 50))
+    exps.append(makeargs('hidden_size', 150))
+
+    #exps.append(('baseline', args))  # baseline solution provided from cmd don't touch
+
+    # exps.append(makeargs('linear_decay_only_in_eval', True))
+    
+    ''' decays 
+    
+    exps.append(makeargs('linear_decay', 0.1))
+    exps.append(makeargs('linear_decay', 0.05))
+    exps.append(makeargs('linear_decay', 0.2))
+    exps.append(makeargs('linear_decay', 0.03))
+
+    '''
+
+    # learning rates
+    ''' 
+    exps.append(makeargs('eta', 0.0005))
+    exps.append(makeargs('eta', 0.002))
+    exps.append(makeargs('eta', 0.0001))
+
+    # dt time interval
+    exps.append(makeargs('dt', 0.002))
+    exps.append(makeargs('dt', 0.008))
+
+    #batch size
+    exps.append(makeargs('batch_size', 5))
+    exps.append(makeargs('batch_size', 2))
+
+    # noise
+    exps.append(makeargs('noise_uniform', 0.07))
+    exps.append(makeargs('noise_uniform', 0.01))
+    
+    # tau
+
+    exps.append(makeargs('tau', 0.2))
+    exps.append(makeargs('tau', 0.1))
+
+    # window
+
+    exps.append(makeargs('stdp_lag', 0.04))
+    exps.append(makeargs('stdp_lag', 0.01))
+
+    # refrac
+
+    exps.append(makeargs('t_refrac', 0.03))
+    exps.append(makeargs('t_refrac', 0.01))
+    '''
 
 
+    exp_results = [] # tuples of args, acccuracies 
+    #import ipdb; ipdb.set_trace()
+    #ax = fig.add_subplot(111)
+    for ind, (label, args) in enumerate(exps):
+        print 'running experiment number# ', ind
+        #if ind < 10000:
+        #    accs = pickle.load(open("exp_results_ld.p", "rb"))
+        #    exp_results.append(accs[ind])
+        #    continue
+        
+        srbm = SRBM_TS(args, logger) # create and initialize spiking rbm network
+        np.random.seed(args.seed)  
+        srbm.set_data(X, y)
+        hist, w, accuracies = srbm.train_network()
+        np.save(args.save_weights, w)
+        exp_results.append((str(args), label, accuracies))
+        #pickle.dump(exp_results, open("exp_results_to.p", "wb" )) # save just in case
+        #print accuracies
 
-#dashboard.plot_reconstr_accuracy()
+    pickle.dump(exp_results, open("exp_results.p", "wb" )) # save just in case
+    for ind, (arg, label, accuracies) in enumerate(exp_results):
+        examples_seen, accs = zip(*accuracies)
+        plt.plot(examples_seen, accs, label= label)
+
+    #plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3,
+    #        ncol=n_exp, mode="expand", borderaxespad=0.)
+    plt.legend(loc='upper left')
+    plt.show()
+    
+
+
 if args.simulate:
     dashboard.run_vis()

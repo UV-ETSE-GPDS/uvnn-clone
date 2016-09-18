@@ -3,7 +3,7 @@ import copy
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-import myex
+import visual
 from collections import namedtuple
 from Queue import PriorityQueue
 from uvnn.utils.images import show_images
@@ -48,8 +48,8 @@ class SRBM_EB(object):
 
     def evaluate_on_test(self, W):
         ''' evaluate on a test data for weights W,
-            For now it will be the average L2 norm of distribution difference 
-            between true spike and network spike distributions
+            It's average L2 norm of distribution difference 
+            between true spike and network spike distributions on the test set
         '''
         new_args = copy.copy(self.args)
         new_args.log_reconstr = True
@@ -122,7 +122,7 @@ class SRBM_EB(object):
         t_passed = 0
         correct = 0
         for (sample_num, x) in enumerate(X_test):
-            spike_train_sample = data_to_spike(x, cf.numspikes, cf.timespan)
+            spike_train_sample = data_to_spike(x, cf.numspikes, cf.timespan, cf.noise_uniform)
 
             for addr, time in spike_train_sample:
                 # spike fired from '-1th' layer
@@ -273,7 +273,7 @@ class SRBM_EB(object):
                 self.errors.append(self.evaluate_accuracy(W))
 
 
-            spike_train_sample = data_to_spike(x, cf.numspikes, cf.timespan)
+            spike_train_sample = data_to_spike(x, cf.numspikes, cf.timespan, cf.noise_uniform)
             # spike train is a one digit encoded to pairs (spike_address, time)
             # example digit 8 can be represented ((2, 12), (2, 13), (4, 14) ...)
         
